@@ -68,7 +68,7 @@ app = Starlette(
         Route("/set-tz", select_timezone_view),
     ],
     middleware=[
-        Middleware(LocaleMiddleware, languages=["en", "be", "pl"], default_locale="pl"),
+        Middleware(LocaleMiddleware, locales=["en", "be", "pl"], default_locale="pl"),
         Middleware(TimezoneMiddleware, fallback="UTC"),
     ],
 )

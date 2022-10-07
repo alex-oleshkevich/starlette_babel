@@ -119,8 +119,9 @@ class TimezoneMiddleware:
         self.app = app
         self.fallback = fallback
         self.selectors = selectors or [
-            TimezoneFromUser(),
+            TimezoneFromQuery(),
             TimezoneFromCookie(),
+            TimezoneFromUser(),
         ]
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
