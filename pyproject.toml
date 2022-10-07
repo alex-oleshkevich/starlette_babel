@@ -1,0 +1,113 @@
+[tool.poetry]
+name = "starlette_babel"
+description = "Locale support for Starlette"
+version = "0.1.0"
+authors = ["Alex Oleshkevich <alex.oleshkevich@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/alex-oleshkevich/starlette_babel"
+repository = "https://github.com/alex-oleshkevich/starlette_babel"
+documentation = "https://github.com/alex-oleshkevich/starlette_babel"
+keywords = []
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+[tool.poetry.dependencies]
+python = "^3.10.0"
+Babel = "^2.10.3"
+starlette = "^0.21.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.1.0"
+pytest-asyncio = "^0.18.0"
+pytest-cov = "^3.0"
+black = "^22.1.0"
+mypy = "^0.941"
+flake8 = "^4.0.1"
+
+[tool.poetry.group.dev.dependencies]
+httpx = "^0.23.0"
+types-babel = "^2.10.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+target-version = ["py310"]
+line_length = 120
+extend-exclude = true
+exclude = '''
+(
+    asv_bench/env
+  | \.egg
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.nox
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | setup.py
+)
+'''
+
+
+[tool.isort]
+combine_as_imports = true
+include_trailing_comma = true
+known_standard_library = "dataclasses,typing_extensions"
+known_first_party = "starlette_babel"
+known_third_party = ["pkg_resources", "toml"]
+known_future_library = "__future__"
+line_length = 120
+multi_line_output = 3
+profile = "black"
+use_parentheses = true
+
+[tool.coverage.run]
+branch = true
+source = ["starlette_babel"]
+omit = ["tests/*", ".venv/*", ".git/*",  "*/__main__.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError"
+]
+
+[tool.mypy]
+disallow_untyped_defs = true
+ignore_missing_imports = true
+files = ["starlette_babel", "examples", "tests"]
+pretty = true
+strict = true
+show_error_context = true
+show_column_numbers = true
+show_error_codes = true
+
+[tool.pytest.ini_options]
+minversion =  "7.1"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+norecursedirs = [
+    "node_modules", "frontend", "storage", "dist", ".git",
+    "*/migrations/*", "*/static/*", "docs", ".venv"
+]
+addopts = "--tb=short -s --no-cov-on-fail"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+]
