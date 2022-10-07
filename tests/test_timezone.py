@@ -7,6 +7,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from starlette_babel import timezone
 from starlette_babel.timezone import (
+    TimezoneFromCookie,
+    TimezoneFromQuery,
+    TimezoneFromUser,
     TimezoneMiddleware,
     get_timezone,
     set_timezone,
@@ -93,13 +96,40 @@ class ForceAuthentication:
 
 
 def test_timezone_middleware_detects_tz_from_user() -> None:
-    client = TestClient(ForceAuthentication(TimezoneMiddleware(app), timezone="Europe/Minsk"))
+    client = TestClient(
+        ForceAuthentication(
+            TimezoneMiddleware(
+                app,
+                selectors=[
+                    TimezoneFromUser(),
+                ],
+            ),
+            timezone="Europe/Minsk",
+        )
+    )
     assert client.get("/").json() == "Europe/Minsk"
 
 
 def test_timezone_middleware_user_supplies_no_timezone() -> None:
     client = TestClient(ForceAuthentication(TimezoneMiddleware(app), timezone=None))
     assert client.get("/").json() == "UTC"
+
+
+def test_timezone_middleware_detects_tz_from_cookie() -> None:
+    client = TestClient(TimezoneMiddleware(app, selectors=[TimezoneFromCookie(cookie_name="tz")]))
+    assert client.get("/", cookies={"tz": "Europe/Minsk"}).json() == "Europe/Minsk"
+
+
+def test_timezone_middleware_detects_tz_from_query() -> None:
+    client = TestClient(TimezoneMiddleware(app, selectors=[TimezoneFromQuery(query_param="tz")]))
+    assert client.get("/?tz=Europe/Minsk").json() == "Europe/Minsk"
+
+
+def test_timezone_middleware_detects_invalid_timezone() -> None:
+    client = TestClient(
+        TimezoneMiddleware(app, fallback="Europe/Warsaw", selectors=[TimezoneFromQuery(query_param="tz")])
+    )
+    assert client.get("/?tz=invalid").json() == "Europe/Warsaw"
 
 
 def test_timezone_middleware_fallback_language() -> None:

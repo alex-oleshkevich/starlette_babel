@@ -25,7 +25,7 @@ def set_timezone(timezone: str | BaseTzInfo) -> None:
 
 
 @contextmanager
-def switch_timezone(tz: str) -> typing.Generator[None, None, None]:
+def switch_timezone(tz: str | BaseTzInfo) -> typing.Generator[None, None, None]:
     """
     Temporary switch current timezone for a code block. The previous timezone will be restored after exiting the
     manager. Use is any other context manager:
@@ -79,12 +79,35 @@ class TimezoneFromUser:
         return None
 
 
+class TimezoneFromQuery:
+    """Try to get timezone from query params."""
+
+    def __init__(self, query_param: str = "tz") -> None:
+        self.query_param = query_param
+
+    def __call__(self, conn: HTTPConnection) -> str | None:
+        return typing.cast(str, conn.query_params.get(self.query_param, ""))
+
+
+class TimezoneFromCookie:
+    """Try to get timezone from cookie."""
+
+    def __init__(self, cookie_name: str = "timezone") -> None:
+        self.cookie_name = cookie_name
+
+    def __call__(self, conn: HTTPConnection) -> str | None:
+        return typing.cast(str, conn.cookies.get(self.cookie_name, ""))
+
+
 class TimezoneMiddleware:
     """
     Detect current timezone from the request. The middleware asks selectors to provide the timezone. If none selectors
     can detect the `fallback` will be set.
 
     You can retrieve current timezone by using `starlette_babel.get_timezone` utility.
+
+    All selected timezones validated by Babel and if selector returns an invalid timezone then the fallback
+    will be used. If fallback is also an invalid timezone then LookupError raised.
     """
 
     def __init__(
@@ -97,13 +120,19 @@ class TimezoneMiddleware:
         self.fallback = fallback
         self.selectors = selectors or [
             TimezoneFromUser(),
+            TimezoneFromCookie(),
         ]
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         conn = HTTPConnection(scope)
         tz = self.detect_timezone(conn) or self.fallback
-        with switch_timezone(tz):
-            conn.state.timezone = tz
+        try:
+            tz_info = babel_get_timezone(tz)
+        except LookupError:
+            tz_info = babel_get_timezone(self.fallback)
+
+        with switch_timezone(tz_info):
+            conn.state.timezone = tz_info
             await self.app(scope, receive, send)
 
     def detect_timezone(self, conn: HTTPConnection) -> str | None:

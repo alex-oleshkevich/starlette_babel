@@ -1,6 +1,7 @@
 import datetime
 import pytest
 import typing
+from babel import Locale
 
 from starlette_babel import switch_locale, switch_timezone
 from starlette_babel.formatters import (
@@ -13,6 +14,7 @@ from starlette_babel.formatters import (
     format_scientific,
     format_time,
     format_timedelta,
+    parse_locale,
 )
 
 christmas = datetime.datetime(2022, 12, 25, 12, 30, 59)
@@ -28,6 +30,19 @@ def bel_tz() -> typing.Generator[None, None, None]:
 def bel_locale() -> typing.Generator[None, None, None]:
     with switch_locale("be_BY"):
         yield
+
+
+def test_parse_locale_from_string() -> None:
+    assert parse_locale("be_BY").language == "be"
+
+
+def test_parse_locale_from_locale() -> None:
+    assert parse_locale(Locale.parse("be_BY")).language == "be"
+
+
+def test_parse_locale_from_none() -> None:
+    with switch_locale("be_BY"):
+        assert parse_locale(None).language == "be"
 
 
 def test_format_datetime(

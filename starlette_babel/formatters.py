@@ -14,7 +14,12 @@ _DateTimeFormats = typing.Literal["short", "medium", "long", "full"]
 _TimeDeltaFormats = typing.Literal["narrow", "short", "long"]
 
 
-def _parse_locale(locale: str | Locale | None) -> Locale:
+def parse_locale(locale: str | Locale | None) -> Locale:
+    """
+    Parse locale from string, Locale object, or None. If None passed then current global locale returned.
+
+    Part of internal API.
+    """
     if locale is None:
         return get_locale()
     if isinstance(locale, str):
@@ -27,11 +32,11 @@ def format_datetime(
 ) -> str:
     if rebase:
         dt = to_user_timezone(dt)
-    return dates.format_datetime(dt, format=format, locale=_parse_locale(locale))
+    return dates.format_datetime(dt, format=format, locale=parse_locale(locale))
 
 
 def format_date(date: datetime.datetime, format: _DateTimeFormats = "medium", locale: str | None = None) -> str:
-    return dates.format_date(date, format=format, locale=_parse_locale(locale))
+    return dates.format_date(date, format=format, locale=parse_locale(locale))
 
 
 def format_time(
@@ -39,7 +44,7 @@ def format_time(
 ) -> str:
     if rebase:
         time = to_user_timezone(time)
-    return dates.format_time(time, format=format, locale=_parse_locale(locale))
+    return dates.format_time(time, format=format, locale=parse_locale(locale))
 
 
 def format_timedelta(
@@ -54,7 +59,7 @@ def format_timedelta(
         timedelta,
         granularity=granularity,
         format=format,
-        locale=_parse_locale(locale),
+        locale=parse_locale(locale),
         threshold=threshold,
         add_direction=add_direction,
     )
@@ -73,7 +78,7 @@ def format_interval(
     if rebase:
         extra_kwargs["tzinfo"] = get_timezone()
     return dates.format_interval(
-        start, end, skeleton=skeleton, fuzzy=fuzzy, locale=_parse_locale(locale), **extra_kwargs
+        start, end, skeleton=skeleton, fuzzy=fuzzy, locale=parse_locale(locale), **extra_kwargs
     )
 
 
@@ -85,7 +90,7 @@ def format_number(
 ) -> str:
     value = numbers.format_decimal(
         number,
-        locale=_parse_locale(locale),
+        locale=parse_locale(locale),
         decimal_quantization=decimal_quantization,
         group_separator=group_separator,
     )
@@ -106,7 +111,7 @@ def format_currency(
         number,
         currency,
         format=format,
-        locale=_parse_locale(locale),
+        locale=parse_locale(locale),
         currency_digits=currency_digits,
         format_type=format_type,
         decimal_quantization=decimal_quantization,
@@ -125,7 +130,7 @@ def format_percent(
     value = numbers.format_percent(
         number,
         format=format,
-        locale=_parse_locale(locale),
+        locale=parse_locale(locale),
         decimal_quantization=decimal_quantization,
         group_separator=group_separator,
     )
@@ -142,6 +147,6 @@ def format_scientific(
         number,
         format=format,
         decimal_quantization=decimal_quantization,
-        locale=_parse_locale(locale),
+        locale=parse_locale(locale),
     )
     return typing.cast(str, value)

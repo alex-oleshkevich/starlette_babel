@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="{{ request.state.language }}">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="max-width: 480px; margin: 0 auto">
+<div>
+    <a href="/">{{ _('Home') }}</a>
+    <a href="/set-lang?lang=en">[{{ _('EN') }}]</a>
+    <a href="/set-lang?lang=be">[{{ _('BE') }}]</a>
+    <a href="/set-lang?lang=pl">[{{ _('PL') }}]</a>
+    <span>|</span>
+    <a href="/set-tz?tz=Europe/Warsaw">[{{ _('Warsaw') }}]</a>
+    <a href="/set-tz?tz=Europe/Minsk">[{{ _('Minsk') }}]</a>
+    <a href="/set-tz?tz=EST">[{{ _('New York') }}]</a>
+</div>
+<p style="font-size: 40px; text-align: center">
+    {{ _('Welcome') }}
+</p>
+<table>
+    <tr>
+        <td>{{ _('Your time') }}</td>
+        <td>{{ current_time|datetime }}</td>
+    </tr>
+    <tr>
+        <td>{{ _('Date') }}</td>
+        <td>{{ current_time|date }}</td>
+    </tr>
+    <tr>
+        <td>{{ _('Time') }}</td>
+        <td>{{ current_time|time }}</td>
+    </tr>
+    <tr>
+        <td>{{ _('Time since midnight') }}</td>
+        <td>{{ since_midnight|timedelta }}</td>
+    </tr>
+    <tr>
+        <td>{{ _('Number format') }}</td>
+        <td>{{ million|number }}</td>
+    </tr>
+    <tr>
+        <td>{{ _('Currency format') }}</td>
+        <td>{{ price|currency(currency) }}</td>
+    </tr>
+    <tr>
+        <td>{{ _('Percent format') }}</td>
+        <td>{{ percent|percent }}</td>
+    </tr>
+    <tr>
+        <td>{{ _('Scientific format') }}</td>
+        <td>{{ pi_number|scientific }}</td>
+    </tr>
+</table>
+</body>
+</html>
