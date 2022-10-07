@@ -139,18 +139,18 @@ class LocaleMiddleware:
     def __init__(
         self,
         app: ASGIApp,
-        languages: list[str] | None = None,
+        locales: list[str] | None = None,
         default_locale: str = "en_US",
         selectors: list[LocaleSelector] | None = None,
     ) -> None:
         self.app = app
-        self.languages = {x.lower().replace("-", "_") for x in (languages or ["en"])}
+        self.locales = {x.lower().replace("-", "_") for x in (locales or ["en"])}
         self.default_locale = default_locale
         self.selectors = selectors or [
             LocaleFromQuery(),
             LocaleFromCookie(),
             LocaleFromUser(),
-            LocaleFromHeader(supported_locales=languages or [default_locale]),
+            LocaleFromHeader(supported_locales=locales or [default_locale]),
         ]
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -184,7 +184,7 @@ class LocaleMiddleware:
         None returned.
         """
         from_locale, _ = locale.lower().split("_") if "_" in locale else [locale, ""]
-        for supported in self.languages:
+        for supported in self.locales:
             if "_" in supported:
                 language, _ = supported.lower().split("_")
                 if language == from_locale:

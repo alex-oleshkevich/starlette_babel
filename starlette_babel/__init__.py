@@ -9,7 +9,17 @@ from .formatters import (
     format_time,
     format_timedelta,
 )
-from .locale import LocaleMiddleware, get_locale, set_locale, switch_locale
+from .locale import (
+    LocaleFromCookie,
+    LocaleFromHeader,
+    LocaleFromQuery,
+    LocaleFromUser,
+    LocaleMiddleware,
+    LocaleSelector,
+    get_locale,
+    set_locale,
+    switch_locale,
+)
 from .timezone import TimezoneMiddleware, get_timezone, set_timezone, switch_timezone, to_user_timezone, to_utc
 from .translator import LazyString, Translator, get_translator, gettext_lazy
 
@@ -37,4 +47,9 @@ __all__ = [
     "Translator",
     "get_translator",
     "LazyString",
+    "LocaleFromUser",
+    "LocaleSelector",
+    "LocaleFromHeader",
+    "LocaleFromQuery",
+    "LocaleFromCookie",
 ]
