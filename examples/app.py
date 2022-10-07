@@ -7,15 +7,17 @@ from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
 
-from starlette_babel import LocaleMiddleware, TimezoneMiddleware, timezone
+from starlette_babel import LocaleMiddleware, TimezoneMiddleware, get_translator, gettext_lazy as _, timezone
 from starlette_babel.contrib.jinja import configure_jinja_env
 
 this_dir = os.path.dirname(__file__)
 templates = Jinja2Templates(os.path.join(this_dir, "templates"))
 configure_jinja_env(templates.env)
+get_translator().load_from_directory(os.path.join(this_dir, "locales"))
 
 
 def index_view(request: Request) -> Response:
+    message = _("This is a demo.")
     midnight = timezone.now().replace(hour=0, minute=0, second=0)
     current_time = timezone.now()
     since_midnight = current_time - midnight
@@ -34,6 +36,7 @@ def index_view(request: Request) -> Response:
         "index.html",
         {
             "request": request,
+            "message": message,
             "current_time": current_time,
             "since_midnight": since_midnight,
             "million": million,

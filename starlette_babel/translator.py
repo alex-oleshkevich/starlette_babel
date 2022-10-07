@@ -129,7 +129,9 @@ class Translator:
         """
         for locale in os.listdir(directory):
             locale_path = os.path.join(directory, locale)
-            if os.path.isfile(os.path.join(directory, locale)):
+            if os.path.isfile(locale_path):
+                if locale_path.endswith(".pot"):
+                    continue
                 raise ValueError(f"Not a locale directory: {locale_path}. It is a file.")
 
             for filename in os.listdir(os.path.join(directory, str(locale), "LC_MESSAGES")):

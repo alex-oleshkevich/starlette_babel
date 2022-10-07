@@ -1,6 +1,6 @@
 # Starlette Babel
 
-Locale support for Starlette
+Locale, timezone, and translations support for Starlette.
 
 ![PyPI](https://img.shields.io/pypi/v/starlette_babel)
 ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/alex-oleshkevich/starlette_babel/Lint)
@@ -21,7 +21,13 @@ poetry add starlette_babel
 
 ## Features
 
--   TODO
+- Locale middleware
+- Multi-domain translations
+- Locale selectors
+- Timezone middleware
+- Timezone selectors
+- Locale-aware formatters
+- Jinja2 integration
 
 ## Quick start
 
