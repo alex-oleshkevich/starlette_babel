@@ -52,7 +52,9 @@ repos:
         rev: 'v0.982'
         hooks:
             -   id: mypy
-                files: "starlette_babel"
+                files: "starlette_babel|examples|tests"
+                args:
+                    - --version
                 additional_dependencies:
                     - types-babel
 

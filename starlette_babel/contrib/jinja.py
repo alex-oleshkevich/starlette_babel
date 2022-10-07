@@ -48,4 +48,4 @@ def configure_jinja_env(jinja_env: jinja2.Environment, translator: Translator | 
         }
     )
     jinja_env.add_extension("jinja2.ext.i18n")
-    jinja_env.install_gettext_translations(translator_)  # noqa
+    jinja_env.install_gettext_translations(translator_)  # type: ignore[attr-defined]
