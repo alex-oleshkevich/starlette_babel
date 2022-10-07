@@ -320,6 +320,42 @@ your_app_package_name/
           shopping.po # <-- new file. defines "shopping" domain
 ```
 
+## Formatters
+
+The library integrates formatting utilities from the Babel package.
+Our version automatically applies current locale/timezone without defining them manually.
+
+Here is the list of adapted formatters:
+
+- format_datetime
+- format_date
+- format_time
+- format_timedelta
+- format_interval
+- format_number
+- format_currency
+- format_percent
+- format_scientific
+
+Consult [Babel documentation](https://babel.pocoo.org/en/latest/index.html) for more information.
+
+### Usage
+
+```python
+import datetime
+
+from starlette_babel import format_datetime, set_locale, set_timezone
+
+set_locale('be')
+set_timezone('Europe/Minsk')
+now = datetime.datetime.now()
+local_time = format_datetime(now)  # <-- this
+```
+
+### Jinja integration
+
+There formatters are automatically exposed to templates after applying `configure_jinja_env` on Jinja environment.
+
 ## Timezone support
 
 To enable timezone support add `TimezoneMiddleware`. The middleware behaves much like `LocaleMiddleware` and shares same
