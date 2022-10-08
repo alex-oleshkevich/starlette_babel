@@ -130,7 +130,7 @@ class Translator:
         for locale in os.listdir(directory):
             locale_path = os.path.join(directory, locale)
             if os.path.isfile(locale_path):
-                if locale_path.endswith(".pot"):
+                if locale_path.endswith(".pot") or os.path.basename(locale_path).startswith("."):
                     continue
                 raise ValueError(f"Not a locale directory: {locale_path}. It is a file.")
 

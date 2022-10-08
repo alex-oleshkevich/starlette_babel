@@ -20,6 +20,11 @@ def test_load_from_directory_should_not_raise_for_pot_files() -> None:
     assert True
 
 
+def test_load_from_directory_should_not_raise_for_dot_files() -> None:
+    Translator(directories=[BROKEN_LOCALE_DIR / "dotfile"])
+    assert True
+
+
 def test_load_from_directory_should_raise_is_lc_messages_missing() -> None:
     with pytest.raises(FileNotFoundError):
         Translator(directories=[BROKEN_LOCALE_DIR / "no_lc_messages"])
