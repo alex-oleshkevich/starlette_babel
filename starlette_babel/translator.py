@@ -72,6 +72,32 @@ class LazyString(LazyProxy):
 gettext_lazy = LazyString
 
 
+def gettext(
+    msgid: str,
+    locale: str | None = None,
+    domain: str = "messages",
+    translator: Translator | None = None,
+) -> str:
+    """Translate message."""
+    locale = str(locale if locale else get_locale())
+    translator = translator or get_translator()
+    return translator.gettext(msgid=msgid, locale=str(locale), domain=domain)
+
+
+def ngettext(
+    singular: str,
+    plural: str,
+    count: int,
+    locale: str | None = None,
+    domain: str = "messages",
+    translator: Translator | None = None,
+) -> str:
+    """Translate message."""
+    locale = str(locale if locale else get_locale())
+    translator = translator or get_translator()
+    return translator.ngettext(singular=singular, plural=plural, count=count, locale=str(locale), domain=domain)
+
+
 class Translator:
     """Translator object is a container for translation messages that provides API to translate messages.
     Usage:
@@ -90,6 +116,8 @@ class Translator:
     translator.gettext('Welcome')
     ```
     """
+
+    shared_translator: Translator
 
     def __init__(self, directories: list[str | os.PathLike[str]] | None = None) -> None:
         self._cache: dict[str, dict[str, Translations]] = {}
@@ -165,9 +193,14 @@ class Translator:
         return translations.ngettext(singular, plural, count).format(count=count)
 
 
-_translator = Translator()
+Translator.shared_translator = Translator()
+
+
+def load_messages_from_directories(directories: list[str | os.PathLike[str]]) -> None:
+    """A helper to load messages from directories into shared translator."""
+    Translator.shared_translator.load_from_directories(directories)
 
 
 def get_translator() -> Translator:
     """Get globally configured translator."""
-    return _translator
+    return Translator.shared_translator

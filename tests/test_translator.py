@@ -3,7 +3,7 @@ import pytest
 from babel.support import Translations
 
 from starlette_babel import switch_locale
-from starlette_babel.translator import LazyString, Translator, get_translator
+from starlette_babel.translator import LazyString, Translator, gettext, load_messages_from_directories, ngettext
 
 LOCALE_DIR = pathlib.Path(__file__).parent / "locales"
 EXTRA_LOCALE_DIR = pathlib.Path(__file__).parent / "extra_locales"
@@ -149,14 +149,36 @@ def test_lazy_string_for_plural() -> None:
         assert string == "1 jabłko"
 
 
-def test_uses_shared_translator() -> None:
-    translator = get_translator()
-    translator.load_from_directory(LOCALE_DIR)
-    string = LazyString("Hello")
+def test_gettext_for_singular() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
     with switch_locale("be"):
-        assert string == "Вітаем"
+        assert gettext("Hello", translator=translator) == "Вітаем"
     with switch_locale("pl"):
-        assert string == "Witamy"
+        assert gettext("Hello", translator=translator) == "Witamy"
+
+
+def test_gettext_for_plural() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
+    with switch_locale("be"):
+        assert ngettext("{count} apple", "{count} apples", count=1, translator=translator) == "1 яблык"
+    with switch_locale("pl"):
+        assert ngettext("{count} apple", "{count} apples", count=1, translator=translator) == "1 jabłko"
+
+
+def test_shared_translator() -> None:
+    Translator.shared_translator.load_from_directories([LOCALE_DIR])
+    with switch_locale("be"):
+        assert gettext("Hello") == "Вітаем"
+    with switch_locale("pl"):
+        assert gettext("Hello") == "Witamy"
+
+
+def test_load_messages_from_directories_helper() -> None:
+    load_messages_from_directories([LOCALE_DIR])
+    with switch_locale("be"):
+        assert gettext("Hello") == "Вітаем"
+    with switch_locale("pl"):
+        assert gettext("Hello") == "Witamy"
 
 
 def test_translates_domain() -> None:
