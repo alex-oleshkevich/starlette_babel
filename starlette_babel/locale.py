@@ -17,7 +17,7 @@ def get_locale() -> Locale:
 def set_locale(locale: Locale | str) -> None:
     """Set active locale."""
     if isinstance(locale, str):
-        locale = typing.cast(Locale, Locale.parse(locale))
+        locale = Locale.parse(locale)
     _current_locale.set(locale)
 
 
@@ -47,7 +47,7 @@ def switch_locale(locale: str) -> typing.Generator[None, None, None]:
 
 def get_language() -> str:
     """Get current language."""
-    return typing.cast(str, get_locale().language)
+    return get_locale().language
 
 
 LocaleSelector = typing.Callable[[HTTPConnection], str | None]
@@ -173,7 +173,7 @@ class LocaleMiddleware:
                 break
 
         variant = self.find_variant(lang) or self.default_locale
-        return typing.cast(Locale, Locale.parse(variant))
+        return Locale.parse(variant)
 
     def find_variant(self, locale: str) -> str | None:
         """

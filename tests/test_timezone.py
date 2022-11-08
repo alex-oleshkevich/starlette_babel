@@ -66,12 +66,6 @@ def test_to_utc() -> None:
 
 
 def test_now() -> None:
-    """It should return datetime respecting current timezone."""
-    now = timezone.now()
-    assert now.tzname() == "CEST"
-
-
-def test_now_with_custom_timezone() -> None:
     with switch_timezone("Europe/Minsk"):
         now = timezone.now()
         assert now.tzname() == "+03"

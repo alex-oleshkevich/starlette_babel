@@ -23,7 +23,7 @@ def parse_locale(locale: str | Locale | None) -> Locale:
     if locale is None:
         return get_locale()
     if isinstance(locale, str):
-        return typing.cast(Locale, Locale.parse(locale))
+        return Locale.parse(locale)
     return locale
 
 
@@ -102,7 +102,7 @@ def format_currency(
     currency: str,
     format: str | None = None,
     currency_digits: bool = True,
-    format_type: str = "standard",
+    format_type: typing.Literal["name", "standard", "accounting"] = "standard",
     decimal_quantization: bool = True,
     group_separator: bool = True,
     locale: str | None = None,
@@ -117,7 +117,7 @@ def format_currency(
         decimal_quantization=decimal_quantization,
         group_separator=group_separator,
     )
-    return typing.cast(str, value)
+    return value
 
 
 def format_percent(
@@ -134,7 +134,7 @@ def format_percent(
         decimal_quantization=decimal_quantization,
         group_separator=group_separator,
     )
-    return typing.cast(str, value)
+    return value
 
 
 def format_scientific(
@@ -149,4 +149,4 @@ def format_scientific(
         decimal_quantization=decimal_quantization,
         locale=parse_locale(locale),
     )
-    return typing.cast(str, value)
+    return value

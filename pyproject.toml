@@ -26,15 +26,13 @@ python = "^3.10.0"
 Babel = "^2.10.3"
 starlette = "^0.21.0"
 
-[tool.poetry.dev-dependencies]
-pytest = "^7.1.0"
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.2.0"
 pytest-asyncio = "^0.18.0"
 pytest-cov = "^3.0"
-black = "^22.8.0"
-mypy = "^0.982"
+black = "^22.10.0"
+mypy = "^0.990"
 flake8 = "^4.0.1"
-
-[tool.poetry.group.dev.dependencies]
 httpx = "^0.23.0"
 types-babel = "^2.10.0"
 Jinja2 = "^3.1.2"
@@ -101,7 +99,7 @@ show_column_numbers = true
 show_error_codes = true
 
 [tool.pytest.ini_options]
-minversion =  "7.1"
+minversion =  "7.2"
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 norecursedirs = [
     "node_modules", "frontend", "storage", "dist", ".git",
