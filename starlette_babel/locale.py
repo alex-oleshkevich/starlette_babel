@@ -154,6 +154,10 @@ class LocaleMiddleware:
         ]
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope['type'] not in ('http', 'websocket'):
+            await self.app(scope, receive, send)
+            return
+
         async def send_wrapper(message: Message) -> None:
             if message["type"] == "http.response.start":
                 message["headers"].append(tuple([b"content-language", scope["state"]["language"].encode()]))

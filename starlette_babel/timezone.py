@@ -125,6 +125,10 @@ class TimezoneMiddleware:
         ]
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope['type'] not in ('http', 'websocket'):
+            await self.app(scope, receive, send)
+            return
+
         conn = HTTPConnection(scope)
         tz = self.detect_timezone(conn) or self.fallback
         try:
