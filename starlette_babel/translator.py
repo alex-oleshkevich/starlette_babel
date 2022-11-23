@@ -69,7 +69,7 @@ class LazyString(LazyProxy):
         return typing.cast(str, value)
 
 
-gettext_lazy = LazyString
+gettext_lazy = typing.cast(typing.Callable[[str], str], LazyString)
 
 
 def gettext(

@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "starlette_babel"
 description = "Locale support for Starlette"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Alex Oleshkevich <alex.oleshkevich@gmail.com>"]
 license = "MIT"
 readme = "README.md"
