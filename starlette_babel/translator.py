@@ -69,7 +69,19 @@ class LazyString(LazyProxy):
         return typing.cast(str, value)
 
 
-gettext_lazy = typing.cast(typing.Callable[[str], str], LazyString)
+class _GettextLazy(typing.Protocol):  # pragma: nocover
+    def __call__(
+        self,
+        msgid: str,
+        msgid_plural: str | None = None,
+        count: int | None = None,
+        domain: str = "messages",
+        translator: Translator | None = None,
+    ) -> str:
+        ...
+
+
+gettext_lazy = typing.cast(_GettextLazy, LazyString)
 
 
 def gettext(

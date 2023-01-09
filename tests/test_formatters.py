@@ -83,6 +83,9 @@ def test_format_time(
     assert format_time(christmas, "long", False) == "12:30:59 UTC"
     assert format_time(christmas, "full", False) == "12:30:59, Універсальны каардынаваны час"
 
+    naive_time = datetime.time(12, 30, 59)
+    assert format_time(naive_time, "medium", False) == "12:30:59"
+
 
 def test_format_time_rebases_timezone(
     bel_tz: typing.Generator[None, None, None], bel_locale: typing.Generator[None, None, None]
@@ -91,6 +94,9 @@ def test_format_time_rebases_timezone(
     assert format_time(christmas, "medium", True) == "15:30:59"
     assert format_time(christmas, "long", True) == "15:30:59 +0300"
     assert format_time(christmas, "full", True) == "15:30:59, Маскоўскі стандартны час"
+
+    naive_time = datetime.time(12, 30, 59)
+    assert format_time(naive_time, "medium", True) == "15:30:59"
 
 
 def test_format_timedelta(
