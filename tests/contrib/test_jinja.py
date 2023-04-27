@@ -32,12 +32,12 @@ def test_translates_plural() -> None:
 
 def test_formats_datetime() -> None:
     template = jinja_env.from_string("{{ christmas|datetime }}")
-    assert template.render(christmas=christmas) == "25 сне 2022 г., 12:30:59"
+    assert template.render(christmas=christmas) == "25 сне 2022\u202fг., 12:30:59"
 
 
 def test_formats_date() -> None:
     template = jinja_env.from_string("{{ christmas|date }}")
-    assert template.render(christmas=christmas) == "25 сне 2022 г."
+    assert template.render(christmas=christmas) == "25 сне 2022\u202fг."
 
 
 def test_formats_time() -> None:

@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "starlette_babel"
 description = "Locale support for Starlette"
-version = "0.2.2"
+version = "1.0.0"
 authors = ["Alex Oleshkevich <alex.oleshkevich@gmail.com>"]
 license = "MIT"
 readme = "README.md"
@@ -22,16 +22,17 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.10.0"
-Babel = "^2.10.3"
-starlette = "^0.21.0"
+python = "^3.10"
+Babel = "^2.12"
+starlette = "*"
+pytz = "^2023.3"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.0"
 pytest-asyncio = "^0.18.0"
 pytest-cov = "^3.0"
-black = "^22.10.0"
-mypy = "^0.990"
+black = "^22.10"
+mypy = "^1.1"
 flake8 = "^4.0.1"
 httpx = "^0.23.0"
 types-babel = "^2.10.0"
