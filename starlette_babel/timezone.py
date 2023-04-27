@@ -106,8 +106,8 @@ class TimezoneMiddleware:
 
     You can retrieve current timezone by using `starlette_babel.get_timezone` utility.
 
-    All selected timezones validated by Babel and if selector returns an invalid timezone then the fallback
-    will be used. If fallback is also an invalid timezone then LookupError raised.
+    All selected timezones validated by Babel and if selector returns an invalid timezone then the fallback will be
+    used. If fallback is also an invalid timezone then LookupError raised.
     """
 
     def __init__(
