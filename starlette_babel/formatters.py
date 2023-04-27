@@ -35,14 +35,28 @@ def format_datetime(
     return dates.format_datetime(dt, format=format, locale=parse_locale(locale))
 
 
-def format_date(date: datetime.datetime, format: _DateTimeFormats = "medium", locale: str | None = None) -> str:
+def format_date(
+    date: datetime.date | datetime.datetime, format: _DateTimeFormats = "medium", locale: str | None = None
+) -> str:
     return dates.format_date(date, format=format, locale=parse_locale(locale))
 
 
 def format_time(
-    time: datetime.datetime, format: _DateTimeFormats = "medium", rebase: bool = True, locale: str | None = None
+    time: datetime.time | datetime.datetime,
+    format: _DateTimeFormats = "medium",
+    rebase: bool = True,
+    locale: str | None = None,
 ) -> str:
     if rebase:
+        if isinstance(time, datetime.time):
+            time = datetime.datetime.utcnow().replace(
+                hour=time.hour,
+                minute=time.minute,
+                second=time.second,
+                microsecond=time.microsecond,
+                tzinfo=time.tzinfo,
+                fold=time.fold,
+            )
         time = to_user_timezone(time)
     return dates.format_time(time, format=format, locale=parse_locale(locale))
 
