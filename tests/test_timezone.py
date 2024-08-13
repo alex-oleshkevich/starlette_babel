@@ -1,9 +1,10 @@
 import datetime
+
 from babel.dates import get_timezone as babel_get_timezone
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import JSONResponse
 from starlette.testclient import TestClient
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from starlette_babel import timezone
 from starlette_babel.timezone import (
@@ -110,8 +111,10 @@ def test_timezone_middleware_user_supplies_no_timezone() -> None:
 
 
 def test_timezone_middleware_detects_tz_from_cookie() -> None:
-    client = TestClient(TimezoneMiddleware(app, selectors=[TimezoneFromCookie(cookie_name="tz")]))
-    assert client.get("/", cookies={"tz": "Europe/Minsk"}).json() == "Europe/Minsk"
+    client = TestClient(
+        TimezoneMiddleware(app, selectors=[TimezoneFromCookie(cookie_name="tz")]), cookies={"tz": "Europe/Minsk"}
+    )
+    assert client.get("/").json() == "Europe/Minsk"
 
 
 def test_timezone_middleware_detects_tz_from_query() -> None:
@@ -145,3 +148,19 @@ def test_timezone_middleware_custom_detector_returns_no_locale() -> None:
 
     client = TestClient(TimezoneMiddleware(app, selectors=[detector]))
     assert client.get("/").json() == "UTC"
+
+
+async def test_timezone_middleware_invalid_request_type() -> None:
+    async def fake_receive() -> Message:
+        return {}
+
+    async def fake_send(message: Message) -> None:
+        pass
+
+    async def fake_app(scope: Scope, receive: Receive, send: Send) -> None:
+        pass
+
+    scope = {"type": "lifecycle"}
+    middleware = TimezoneMiddleware(fake_app, fallback="Europe/Warsaw")
+    await middleware({"type": "lifecycle"}, fake_receive, fake_send)
+    assert "state" not in scope

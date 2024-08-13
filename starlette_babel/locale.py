@@ -78,7 +78,7 @@ class LocaleFromCookie:
         self.cookie_name = cookie_name
 
     def __call__(self, conn: HTTPConnection) -> str | None:
-        return typing.cast(str, conn.cookies.get(self.cookie_name, ""))
+        return conn.cookies.get(self.cookie_name, "")
 
 
 class LocaleFromHeader:

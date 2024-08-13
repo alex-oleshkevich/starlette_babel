@@ -6,7 +6,7 @@ default_stages: [ commit ]
 
 repos:
     -   repo: https://github.com/pre-commit/pre-commit-hooks
-        rev: v4.4.0
+        rev: v4.5.0
         hooks:
             -   id: trailing-whitespace
             -   id: end-of-file-fixer
@@ -21,43 +21,28 @@ repos:
             -   id: check-merge-conflict
             -   id: check-docstring-first
             -   id: check-added-large-files
+                args: [ "--maxkb=1024" ]
             -   id: check-executables-have-shebangs
 
-    -   repo: https://github.com/pycqa/isort
-        rev: 5.12.0
+    -   repo: https://github.com/astral-sh/ruff-pre-commit
+        rev: v0.3.3
         hooks:
-            -   id: isort
-
-    -   repo: https://github.com/psf/black.git
-        rev: 23.3.0
-        hooks:
-            -   id: black
-
-    -   repo: https://github.com/humitos/mirrors-autoflake.git
-        rev: v1.1
-        hooks:
-            -   id: autoflake
-                args: [ '--in-place', '--remove-all-unused-imports', '--remove-unused-variable' ]
-
-
-    -   repo: https://github.com/pycqa/flake8
-        rev: 6.0.0
-        hooks:
-            -   id: flake8
+            -   id: ruff
+                args: [ --fix ]
+            -   id: ruff-format
 
     -   repo: https://github.com/pre-commit/mirrors-mypy
-        rev: 'v1.2.0'
+        rev: 'v1.9.0'
         hooks:
             -   id: mypy
-                files: "starlette_babel|examples|tests"
+                files: "starlette_babel"
                 additional_dependencies:
+                    - starlette
                     - jinja2
-                    - pytest
-                    - babel
                     - types-babel
 
     -   repo: https://github.com/myint/docformatter.git
-        rev: v1.6.4
+        rev: v1.7.5
         hooks:
             -   id: docformatter
                 args: [ '--in-place', '--wrap-summaries=120', '--wrap-descriptions=120', '--pre-summary-newline' ]

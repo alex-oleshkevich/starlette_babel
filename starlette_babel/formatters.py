@@ -3,6 +3,7 @@ Date, time, numbers, and currency formatters.
 
 This module inspired/based on Flask-Babel.
 """
+
 import datetime
 import typing
 from babel import Locale, dates, numbers
@@ -49,7 +50,7 @@ def format_time(
 ) -> str:
     if rebase:
         if isinstance(time, datetime.time):
-            time = datetime.datetime.utcnow().replace(
+            time = datetime.datetime.now(tz=datetime.timezone.utc).replace(
                 hour=time.hour,
                 minute=time.minute,
                 second=time.second,

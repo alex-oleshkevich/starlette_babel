@@ -77,8 +77,7 @@ class _GettextLazy(typing.Protocol):  # pragma: nocover
         count: int | None = None,
         domain: str = "messages",
         translator: Translator | None = None,
-    ) -> str:
-        ...
+    ) -> str: ...
 
 
 gettext_lazy = typing.cast(_GettextLazy, LazyString)

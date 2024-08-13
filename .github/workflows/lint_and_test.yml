@@ -12,35 +12,36 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                python-version: [ '3.10', '3.11' ]
+                python-version: [ '3.10', '3.11', '3.12' ]
 
         steps:
-            -   uses: actions/checkout@v2
+            -   uses: actions/checkout@v4
+
             -   name: Set up Python ${{ matrix.python-version }}
-                uses: actions/setup-python@v2
+                uses: actions/setup-python@v5
                 with:
                     python-version: ${{ matrix.python-version }}
 
             -   name: Run pre-commit
-                uses: pre-commit/action@v3.0.0
+                uses: pre-commit/action@v3.0.1
 
     unit_tests:
         runs-on: ubuntu-latest
         strategy:
             fail-fast: false
             matrix:
-                python-version: [ '3.10', '3.11' ]
+                python-version: [ '3.10', '3.11', '3.12' ]
 
         steps:
-            -   uses: actions/checkout@v2
+            -   uses: actions/checkout@v3
 
             -   name: Set up Python
-                uses: actions/setup-python@v2
+                uses: actions/setup-python@v4
                 with:
-                    python-version: '3.x'
+                    python-version: ${{ matrix.python-version }}
 
             -   name: Cache poetry
-                uses: actions/cache@v2
+                uses: actions/cache@v3
                 with:
                     path: |
                         ~/.cache/pypoetry
@@ -53,6 +54,15 @@ jobs:
                     poetry config virtualenvs.create false
                     poetry install --no-interaction
 
-            -   name: Test with pytest
+            -   name: Run tests
+                run: pytest --cov --cov-report xml --cov-report term-missing
+
+            -   name: Upload coverage
+                uses: codecov/codecov-action@v4
+                with:
+                    files: ./coverage.xml
+                    verbose: true
+
+            -   name: Generate coverage
                 run: |
-                    pytest --no-cov-on-fail --cov starlette_babel/ --cov tests/
+                  python -m coverage report --fail-under=100 -m

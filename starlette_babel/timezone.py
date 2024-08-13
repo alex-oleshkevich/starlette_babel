@@ -59,7 +59,7 @@ def to_utc(dt: datetime.datetime) -> datetime.datetime:
 
 def now() -> datetime.datetime:
     """Get current time in user timezone."""
-    _now = datetime.datetime.utcnow()
+    _now = datetime.datetime.now(datetime.timezone.utc)
     return to_user_timezone(_now)
 
 
@@ -96,7 +96,7 @@ class TimezoneFromCookie:
         self.cookie_name = cookie_name
 
     def __call__(self, conn: HTTPConnection) -> str | None:
-        return typing.cast(str, conn.cookies.get(self.cookie_name, ""))
+        return conn.cookies.get(self.cookie_name, "")
 
 
 class TimezoneMiddleware:

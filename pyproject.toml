@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "starlette_babel"
 description = "Locale support for Starlette"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Alex Oleshkevich <alex.oleshkevich@gmail.com>"]
 license = "MIT"
 readme = "README.md"
@@ -17,6 +17,8 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
@@ -25,73 +27,33 @@ classifiers = [
 python = "^3.10"
 Babel = "^2.12"
 starlette = "*"
-pytz = "^2023.3"
+pytz = "*"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^7.2.0"
-pytest-asyncio = "^0.18.0"
-pytest-cov = "^3.0"
-black = "^22.10"
-mypy = "^1.1"
-flake8 = "^4.0.1"
+pytest = "^8.0"
+pytest-asyncio = "^0.23"
+pytest-cov = "^4.0"
+mypy = "^1"
 httpx = "^0.23.0"
 types-babel = "^2.10.0"
 Jinja2 = "^3.1.2"
-uvicorn = "^0.18.3"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.black]
-target-version = ["py310"]
-line_length = 120
-extend-exclude = true
-exclude = '''
-(
-    asv_bench/env
-  | \.egg
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.nox
-  | \.tox
-  | \.venv
-  | _build
-  | buck-out
-  | build
-  | dist
-  | setup.py
-)
-'''
-
-
-[tool.isort]
-combine_as_imports = true
-include_trailing_comma = true
-known_standard_library = "dataclasses,typing_extensions"
-known_first_party = "starlette_babel"
-known_third_party = ["pkg_resources", "toml"]
-known_future_library = "__future__"
-line_length = 120
-multi_line_output = 3
-profile = "black"
-use_parentheses = true
-
 [tool.coverage.run]
 branch = true
 source = ["starlette_babel"]
-omit = ["tests/*", ".venv/*", ".git/*",  "*/__main__.py"]
+omit = ["tests/*", ".venv/*", ".git/*", "*/__main__.py", "examples"]
 
 [tool.coverage.report]
-exclude_lines = [
+exclude_also = [
     "pragma: no cover",
     "raise NotImplementedError"
 ]
 
 [tool.mypy]
-disallow_untyped_defs = true
-ignore_missing_imports = true
 files = ["starlette_babel", "examples", "tests"]
 pretty = true
 strict = true
@@ -100,7 +62,8 @@ show_column_numbers = true
 show_error_codes = true
 
 [tool.pytest.ini_options]
-minversion =  "7.2"
+minversion = "8.0"
+asyncio_mode = 'auto'
 python_files = ["tests.py", "test_*.py", "*_tests.py"]
 norecursedirs = [
     "node_modules", "frontend", "storage", "dist", ".git",
@@ -108,7 +71,23 @@ norecursedirs = [
 ]
 addopts = "--tb=short -s --no-cov-on-fail"
 testpaths = ["tests"]
-filterwarnings = [
-    "ignore::UserWarning",
-    "ignore::DeprecationWarning",
+filterwarnings = []
+
+[tool.ruff]
+exclude = [
+    ".egg",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".tox",
+    ".venv",
 ]
+line-length = 120
+indent-width = 4
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+
+[tool.ruff.format]
+skip-magic-trailing-comma = false

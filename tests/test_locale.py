@@ -2,7 +2,7 @@ from babel import Locale
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import JSONResponse
 from starlette.testclient import TestClient
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from starlette_babel.locale import (
     LocaleFromCookie,
@@ -34,14 +34,16 @@ def test_locale_middleware_detects_locale_from_query_using_custom_query_param() 
 
 def test_locale_middleware_detects_locale_from_cookie() -> None:
     """It should read and set locale from the cookie."""
-    client = TestClient(LocaleMiddleware(app, locales=["be_BY"]))
-    assert client.get("/", cookies={"language": "be_BY"}).json() == ["be", "BY"]
+    client = TestClient(LocaleMiddleware(app, locales=["be_BY"]), cookies={"language": "be_BY"})
+    assert client.get("/").json() == ["be", "BY"]
 
 
 def test_locale_middleware_detects_locale_from_cookie_using_custom_name() -> None:
     """It should read and set locale from the cookie using custom cookie name."""
-    client = TestClient(LocaleMiddleware(app, locales=["be_BY"], selectors=[LocaleFromCookie("lang")]))
-    assert client.get("/", cookies={"lang": "be_BY"}).json() == ["be", "BY"]
+    client = TestClient(
+        LocaleMiddleware(app, locales=["be_BY"], selectors=[LocaleFromCookie("lang")]), cookies={"lang": "be_BY"}
+    )
+    assert client.get("/").json() == ["be", "BY"]
 
 
 def test_locale_middleware_detects_locale_from_header() -> None:
@@ -102,6 +104,17 @@ def test_locale_middleware_finds_variant() -> None:
     assert client.get("/?lang=ru_RU").json() == ["ru", "BY"]
 
 
+def test_locale_middleware_finds_variant_no_dash() -> None:
+    """If there is no locale exactly matching the requested, try to find alternate variant that may satisfy the
+    client."""
+
+    client = TestClient(LocaleMiddleware(app, locales=["ru"]))
+    assert client.get("/?lang=ru_RU").json() == ["ru", None]
+
+    client = TestClient(LocaleMiddleware(app))
+    assert client.get("/?lang=ru_RU").json() == ["en", "US"]
+
+
 def test_locale_middleware_fallback_language() -> None:
     """If there is no locale exactly matching the requested, try to find alternate variant that may satisfy the
     client."""
@@ -154,3 +167,19 @@ def test_temporary_switch_locale() -> None:
 def test_get_language() -> None:
     set_locale("be_BY")
     assert get_language() == "be"
+
+
+async def test_locale_middleware_invalid_request_type() -> None:
+    async def fake_receive() -> Message:
+        return {}
+
+    async def fake_send(message: Message) -> None:
+        pass
+
+    async def fake_app(scope: Scope, receive: Receive, send: Send) -> None:
+        pass
+
+    scope = {"type": "lifecycle"}
+    middleware = LocaleMiddleware(fake_app)
+    await middleware({"type": "lifecycle"}, fake_receive, fake_send)
+    assert "state" not in scope
