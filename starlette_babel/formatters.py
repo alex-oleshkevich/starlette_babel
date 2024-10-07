@@ -88,7 +88,7 @@ def format_interval(
     rebase: bool = True,
     locale: str | None = None,
 ) -> str:
-    assert type(start) == type(end), '"start" and "end" arguments must be of the same type.'
+    assert type(start) is type(end), '"start" and "end" arguments must be of the same type.'
     extra_kwargs = {}
     if rebase:
         extra_kwargs["tzinfo"] = get_timezone()
