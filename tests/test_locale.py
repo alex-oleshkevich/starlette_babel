@@ -1,3 +1,4 @@
+import pytest
 from babel import Locale
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import JSONResponse
@@ -46,12 +47,21 @@ def test_locale_middleware_detects_locale_from_cookie_using_custom_name() -> Non
     assert client.get("/").json() == ["be", "BY"]
 
 
-def test_locale_middleware_detects_locale_from_header() -> None:
+@pytest.mark.parametrize(
+    "header",
+    (
+        "en-US,en;q=0.9,ru-BY;q=0.8,ru;q=0.7,be-BY;q=0.6,be;q=0.5,pl;q=0.4,de;q=0.3",
+        "en-US,en;q=0.9;q=0.8,ru-BY;q=0.8,ru;q=0.7,be-BY;q=0.6,be;q=0.5,pl;q=0.4,de;q=0.3",
+        "be_BY;q=0.9;q=0.8",
+        "be_BY;q=",
+        "be_BY;",
+        "be_BY",
+    ),
+)
+def test_locale_middleware_detects_locale_from_header(header: str) -> None:
     """It should read and set locale from the accept-language header."""
     client = TestClient(LocaleMiddleware(app, locales=["be_BY"]))
-    assert client.get(
-        "/", headers={"accept-language": "en-US,en;q=0.9,ru-BY;q=0.8,ru;q=0.7,be-BY;q=0.6,be;q=0.5,pl;q=0.4,de;q=0.3"}
-    ).json() == ["be", "BY"]
+    assert client.get("/", headers={"accept-language": header}).json() == ["be", "BY"]
 
 
 def test_locale_middleware_detects_locale_from_header_with_wildcard() -> None:
