@@ -106,13 +106,16 @@ class LocaleFromHeader:
     def _get_languages_from_header(self, header: str) -> list[tuple[str, float]]:
         parts = header.split(",")
         result = []
+        priority = 1.0
         for part in parts:
             if ";" in part:
-                locale, priority_ = part.split(";")
-                priority = float(priority_[2:])
+                locale, *priorities = part.split(";")
+                try:
+                    priority = float(priorities[0][2:])
+                except ValueError:
+                    pass
             else:
                 locale = part
-                priority = 1.0
             result.append((locale, priority))
         return sorted(result, key=lambda x: x[1], reverse=True)
 
