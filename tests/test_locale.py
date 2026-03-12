@@ -11,6 +11,7 @@ from starlette_babel.locale import (
     LocaleMiddleware,
     get_language,
     get_locale,
+    negotiate_locale,
     set_locale,
     switch_locale,
 )
@@ -62,6 +63,19 @@ def test_locale_middleware_detects_locale_from_header(header: str) -> None:
     """It should read and set locale from the accept-language header."""
     client = TestClient(LocaleMiddleware(app, locales=["be_BY"]))
     assert client.get("/", headers={"accept-language": header}).json() == ["be", "BY"]
+
+
+def test_locale_from_header_respects_implicit_priority() -> None:
+    """A locale without q= has implicit priority 1.0 and should beat locales with q=0.9."""
+    client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
+    # fr;q=0.9 comes first in the header string, but be_BY has implicit 1.0
+    assert client.get("/", headers={"accept-language": "fr;q=0.9,be_BY"}).json() == ["be", "BY"]
+
+
+def test_locale_from_header_handles_spaces_in_qvalue() -> None:
+    """Accept-Language q-values with surrounding spaces should be parsed correctly."""
+    client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
+    assert client.get("/", headers={"accept-language": "fr ; q=0.9 , be_BY"}).json() == ["be", "BY"]
 
 
 def test_locale_middleware_detects_locale_from_header_with_wildcard() -> None:
@@ -177,6 +191,38 @@ def test_temporary_switch_locale() -> None:
 def test_get_language() -> None:
     set_locale("be_BY")
     assert get_language() == "be"
+
+
+def test_switch_locale_restores_on_exception() -> None:
+    set_locale("en_US")
+    with pytest.raises(RuntimeError):
+        with switch_locale("be_BY"):
+            raise RuntimeError("boom")
+    assert str(get_locale()) == "en_US"
+
+
+def test_switch_locale_accepts_locale_object() -> None:
+    locale = Locale.parse("be_BY")
+    with switch_locale(locale):
+        assert str(get_locale()) == "be_BY"
+
+
+def test_negotiate_locale_exact_match() -> None:
+    assert negotiate_locale(["be_BY"], ["be_BY", "en_US"]) == "be_BY"
+
+
+def test_negotiate_locale_language_only_fallback() -> None:
+    # Babel negotiate does language-only fallback: en_US → en if 'en' is available
+    assert negotiate_locale(["en_US"], ["en", "fr"]) == "en"
+
+
+def test_negotiate_locale_no_territory_substitution() -> None:
+    # negotiate_locale does NOT substitute territories (en_US → en_GB is not supported)
+    assert negotiate_locale(["en_US"], ["en_GB"]) is None
+
+
+def test_negotiate_locale_no_match() -> None:
+    assert negotiate_locale(["zh_CN"], ["en_US", "fr_FR"]) is None
 
 
 async def test_locale_middleware_invalid_request_type() -> None:

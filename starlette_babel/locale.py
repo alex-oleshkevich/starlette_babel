@@ -1,8 +1,10 @@
 import contextvars as cv
 import typing
-from babel import Locale
 from contextlib import contextmanager
 from functools import lru_cache
+
+from babel import Locale
+from starlette.datastructures import MutableHeaders
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -22,7 +24,7 @@ def set_locale(locale: Locale | str) -> None:
 
 
 @contextmanager
-def switch_locale(locale: str) -> typing.Generator[None, None, None]:
+def switch_locale(locale: Locale | str) -> typing.Generator[None, None, None]:
     """
     Temporary switch current locale for a code block. The previous locale will be restored after exiting the manager.
     Use is any other context manager:
@@ -41,8 +43,10 @@ def switch_locale(locale: str) -> typing.Generator[None, None, None]:
     """
     old_locale = get_locale()
     set_locale(locale)
-    yield
-    set_locale(old_locale)
+    try:
+        yield
+    finally:
+        set_locale(old_locale)
 
 
 def get_language() -> str:
@@ -64,7 +68,7 @@ class LocaleFromQuery:
         self.query_param = query_param
 
     def __call__(self, conn: HTTPConnection) -> str | None:
-        return typing.cast(str, conn.query_params.get(self.query_param, ""))
+        return conn.query_params.get(self.query_param)
 
 
 class LocaleFromCookie:
@@ -78,7 +82,7 @@ class LocaleFromCookie:
         self.cookie_name = cookie_name
 
     def __call__(self, conn: HTTPConnection) -> str | None:
-        return conn.cookies.get(self.cookie_name, "")
+        return conn.cookies.get(self.cookie_name)
 
 
 class LocaleFromHeader:
@@ -102,20 +106,23 @@ class LocaleFromHeader:
                 return lang
         return None
 
+    @staticmethod
     @lru_cache(maxsize=1000)
-    def _get_languages_from_header(self, header: str) -> list[tuple[str, float]]:
+    def _get_languages_from_header(header: str) -> list[tuple[str, float]]:
         parts = header.split(",")
         result = []
-        priority = 1.0
         for part in parts:
+            part = part.strip()
             if ";" in part:
-                locale, *priorities = part.split(";")
+                locale, _, qpart = part.partition(";")
+                locale = locale.strip()
                 try:
-                    priority = float(priorities[0][2:])
-                except ValueError:
-                    pass
+                    priority = float(qpart.strip()[2:])
+                except (ValueError, IndexError):
+                    priority = 1.0
             else:
                 locale = part
+                priority = 1.0
             result.append((locale, priority))
         return sorted(result, key=lambda x: x[1], reverse=True)
 
@@ -129,6 +136,26 @@ class LocaleFromUser:
             getter: typing.Callable[[], str] = getattr(conn.user, self.getter_method)
             return getter()
         return None
+
+
+def negotiate_locale(preferred: list[str], available: list[str]) -> str | None:
+    """
+    Negotiate the best matching locale from a list of preferred locales against a list of available locales.
+
+    Uses Babel's locale negotiation which handles script subtags and aliases.
+    Tries exact match first, then language-only match (e.g. 'en_US' → 'en' if 'en' is available).
+    Returns the best matching locale identifier string, or None if no match is found.
+
+    Example:
+        ```python
+        from starlette_babel import negotiate_locale
+
+        negotiate_locale(['be_BY', 'en'], ['en_US', 'fr'])  # 'en_US' via language match
+        negotiate_locale(['zh_CN'], ['en_US', 'fr'])        # None — no match
+        ```
+    """
+    result = Locale.negotiate(preferred, available)
+    return str(result) if result is not None else None
 
 
 class LocaleMiddleware:
@@ -147,7 +174,7 @@ class LocaleMiddleware:
         selectors: list[LocaleSelector] | None = None,
     ) -> None:
         self.app = app
-        self.locales = {x.lower().replace("-", "_") for x in (locales or ["en"])}
+        self.locales = [x.replace("-", "_") for x in (locales or ["en_US"])]
         self.default_locale = default_locale
         self.selectors = selectors or [
             LocaleFromQuery(),
@@ -163,7 +190,8 @@ class LocaleMiddleware:
 
         async def send_wrapper(message: Message) -> None:
             if message["type"] == "http.response.start":
-                message["headers"].append(tuple([b"content-language", scope["state"]["language"].encode()]))
+                headers = MutableHeaders(scope=message)
+                headers.append("content-language", scope["state"]["language"])
             await send(message)
 
         locale = self.detect_locale(HTTPConnection(scope))
@@ -173,29 +201,29 @@ class LocaleMiddleware:
         await self.app(scope, receive, send_wrapper)
 
     def detect_locale(self, conn: HTTPConnection) -> Locale:
-        lang = self.default_locale
+        detected = self.default_locale
         for selector in self.selectors:
             if locale := selector(conn):
-                lang = locale
+                detected = locale
                 break
 
-        variant = self.find_variant(lang) or self.default_locale
+        variant = self._find_variant(detected.replace("-", "_")) or self.default_locale
         return Locale.parse(variant)
 
-    def find_variant(self, locale: str) -> str | None:
+    def _find_variant(self, locale: str) -> str | None:
         """
         Look up requested locale in supported list.
 
-        If the locale does not exist, it will attempt to find the closest locale from the all supported. For example, if
-        clients requests en_US, but we support only "en_GB" then en_GB to be returned. If no locales match request then
-        None returned.
+        Tries exact match first, then language-only match to find any supported variant for the same language.
+        For example, if the client requests en_US but only en_GB is supported, returns en_GB.
         """
-        from_locale, _ = locale.lower().split("_") if "_" in locale else [locale, ""]
+        locale = locale.lower()
+        lang = locale.split("_")[0]
         for supported in self.locales:
-            if "_" in supported:
-                language, _ = supported.lower().split("_")
-                if language == from_locale:
-                    return supported
-            elif from_locale.lower() == supported.lower():
+            if supported.lower() == locale:
+                return supported
+        for supported in self.locales:
+            supported_lang = supported.lower().split("_")[0]
+            if supported_lang == lang:
                 return supported
         return None

@@ -25,9 +25,16 @@ def test_load_from_directory_should_not_raise_for_dot_files() -> None:
     assert True
 
 
-def test_load_from_directory_should_raise_is_lc_messages_missing() -> None:
-    with pytest.raises(FileNotFoundError):
-        Translator(directories=[BROKEN_LOCALE_DIR / "no_lc_messages"])
+def test_load_from_directory_skips_locale_dirs_without_lc_messages() -> None:
+    """Locale directories without LC_MESSAGES are silently skipped."""
+    Translator(directories=[BROKEN_LOCALE_DIR / "no_lc_messages"])
+    assert True
+
+
+def test_load_from_directory_skips_pycache() -> None:
+    """Should not raise when __pycache__ exists alongside locale directories."""
+    Translator(directories=[BROKEN_LOCALE_DIR / "with_pycache"])
+    assert True
 
 
 def test_loads_from_directories_on_init() -> None:

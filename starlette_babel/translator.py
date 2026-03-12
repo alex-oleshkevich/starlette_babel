@@ -8,6 +8,8 @@ from starlette_babel.locale import get_locale
 
 AnyTranslations = NullTranslations | Translations
 
+_SKIP_DIRS = {"__pycache__", ".git", ".hg", ".svn"}
+
 
 class LazyString(LazyProxy):
     """
@@ -103,7 +105,12 @@ def ngettext(
     domain: str = "messages",
     translator: Translator | None = None,
 ) -> str:
-    """Translate message."""
+    """Translate message (plural form).
+
+    Plural translation strings may use `{count}` as a placeholder for the count value:
+        singular = "{count} apple"
+        plural   = "{count} apples"
+    """
     locale = str(locale if locale else get_locale())
     translator = translator or get_translator()
     return translator.ngettext(singular=singular, plural=plural, count=count, locale=str(locale), domain=domain)
@@ -120,9 +127,9 @@ class Translator:
 
     A shared instance (process global) also available by calling `get_translator`:
     ```python
-    from starlette_babel import get_get_translator
+    from starlette_babel import get_translator
 
-    translator = get_get_translator()
+    translator = get_translator()
     translator.load_from_directory('/path/to/locales_dir')
     translator.gettext('Welcome')
     ```
@@ -167,13 +174,22 @@ class Translator:
         Automatically detects locale and domain using file and directory names.
         """
         for locale in os.listdir(directory):
+            if locale in _SKIP_DIRS or locale.startswith("."):
+                continue
+
             locale_path = os.path.join(directory, locale)
             if os.path.isfile(locale_path):
-                if locale_path.endswith(".pot") or os.path.basename(locale_path).startswith("."):
+                if locale_path.endswith(".pot"):
                     continue
                 raise ValueError(f"Not a locale directory: {locale_path}. It is a file.")
 
-            for filename in os.listdir(os.path.join(directory, str(locale), "LC_MESSAGES")):
+            lc_messages_path = os.path.join(directory, str(locale), "LC_MESSAGES")
+            if not os.path.isdir(lc_messages_path):
+                continue
+
+            for filename in os.listdir(lc_messages_path):
+                if not filename.endswith(".mo"):
+                    continue
                 domain, _ = os.path.splitext(filename)
                 translations = Translations.load(str(directory), [locale], domain)
                 self.add_translations(str(locale), translations, domain)
@@ -199,9 +215,16 @@ class Translator:
         return translations.gettext(msgid)
 
     def ngettext(self, singular: str, plural: str, count: int, locale: str, domain: str = "messages") -> str:
-        """Translate msgid (plural form)."""
+        """Translate msgid (plural form).
+
+        Translation strings may use `{count}` as a placeholder for the count value.
+        """
         translations = self.get_translations(locale=locale, domain=domain)
-        return translations.ngettext(singular, plural, count).format(count=count)
+        result = translations.ngettext(singular, plural, count)
+        try:
+            return result.format(count=count)
+        except (KeyError, IndexError):  # pragma: no cover
+            return result
 
 
 Translator.shared_translator = Translator()
