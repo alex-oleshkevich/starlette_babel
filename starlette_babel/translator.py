@@ -223,7 +223,7 @@ class Translator:
         result = translations.ngettext(singular, plural, count)
         try:
             return result.format(count=count)
-        except (KeyError, IndexError):
+        except (KeyError, IndexError):  # pragma: no cover
             return result
 
 

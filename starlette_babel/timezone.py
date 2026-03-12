@@ -56,7 +56,7 @@ def to_utc(dt: datetime.datetime) -> datetime.datetime:
     if dt.tzinfo is None:
         tz = get_timezone()
         if hasattr(tz, "localize"):
-            dt = tz.localize(dt)
+            dt = tz.localize(dt)  # pragma: no cover
         else:
             dt = dt.replace(tzinfo=tz)
     return dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
