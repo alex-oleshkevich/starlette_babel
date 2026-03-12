@@ -11,12 +11,12 @@ Provides translations, formatters, and timezone support for Starlette applicatio
 
 ## Installation
 
-Install `starlette_babel` using PIP or poetry:
+Install `starlette_babel` using pip or uv:
 
 ```bash
 pip install starlette_babel
 # or
-poetry add starlette_babel
+uv add starlette_babel
 ```
 
 ## Features
@@ -26,7 +26,9 @@ poetry add starlette_babel
 - Locale selectors
 - Timezone middleware
 - Timezone selectors
-- Locale-aware formatters
+- Locale-aware formatters (dates, times, numbers, currencies, percentages)
+- Locale negotiation via `negotiate_locale`
+- Number parsing via `parse_number` / `parse_decimal`
 - Jinja2 integration
 
 ## Quick start
@@ -336,6 +338,7 @@ Here is the list of adapted formatters:
 - format_currency
 - format_percent
 - format_scientific
+- format_compact_decimal
 
 Consult [Babel documentation](https://babel.pocoo.org/en/latest/index.html) for more information.
 
@@ -385,24 +388,24 @@ By default, the middleware will try these selectors:
 #### Reading timezone from request object
 
 ```python
-from pytz import BaseTzInfo
+import datetime
 
 
 def index_view(request):
-    timezone: BaseTzInfo = request.state.timezone
+    timezone: datetime.tzinfo = request.state.timezone
 ```
 
 #### Using `get_timezone` helper
 
 Use `get_timezone` helper to get the timezone information set by the middleware.
-If middleware not used it will return UTC zone info.
+If middleware not used it will return UTC.
 
 ```python
-from pytz import BaseTzInfo
+import datetime
 
 from starlette_babel import get_timezone
 
-tz: BaseTzInfo = get_timezone()
+tz: datetime.tzinfo = get_timezone()
 ```
 
 ### Customizing selectors or changing their order
@@ -484,7 +487,7 @@ import datetime
 from starlette_babel import to_user_timezone, set_timezone
 
 set_timezone('Europe/Minsk')
-now = datetime.datetime.utcnow()  # time in UTC
+now = datetime.datetime.now(datetime.timezone.utc)  # time in UTC
 user_now = to_user_timezone(now)  # time in Europe/Minsk
 ```
 

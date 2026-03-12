@@ -1,4 +1,7 @@
+__version__ = "1.1.0"
+
 from .formatters import (
+    format_compact_decimal,
     format_currency,
     format_date,
     format_datetime,
@@ -8,6 +11,8 @@ from .formatters import (
     format_scientific,
     format_time,
     format_timedelta,
+    parse_decimal,
+    parse_number,
 )
 from .locale import (
     LocaleFromCookie,
@@ -16,7 +21,9 @@ from .locale import (
     LocaleFromUser,
     LocaleMiddleware,
     LocaleSelector,
+    get_language,
     get_locale,
+    negotiate_locale,
     set_locale,
     switch_locale,
 )
@@ -33,12 +40,15 @@ from .timezone import (
     to_user_timezone,
     to_utc,
 )
-from .translator import LazyString, Translator, get_translator, gettext_lazy
+from .translator import LazyString, Translator, get_translator, gettext_lazy, ngettext
 
 __all__ = [
     "get_locale",
+    "get_language",
     "set_locale",
     "switch_locale",
+    "negotiate_locale",
+    "format_compact_decimal",
     "format_currency",
     "format_time",
     "format_scientific",
@@ -48,6 +58,8 @@ __all__ = [
     "format_interval",
     "format_timedelta",
     "format_percent",
+    "parse_decimal",
+    "parse_number",
     "set_timezone",
     "get_timezone",
     "switch_timezone",
@@ -55,6 +67,7 @@ __all__ = [
     "to_utc",
     "to_user_timezone",
     "gettext_lazy",
+    "ngettext",
     "LocaleMiddleware",
     "TimezoneMiddleware",
     "Translator",

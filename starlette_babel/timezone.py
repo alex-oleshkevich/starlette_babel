@@ -1,51 +1,52 @@
 import contextvars as cv
 import datetime
 import typing
-from babel.dates import get_timezone as babel_get_timezone
-from babel.util import UTC
 from contextlib import contextmanager
-from pytz import BaseTzInfo
+
+from babel.dates import get_timezone as babel_get_timezone
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-_current_timezone: cv.ContextVar[BaseTzInfo] = cv.ContextVar("current_timezone", default=UTC)
+_current_timezone: cv.ContextVar[datetime.tzinfo] = cv.ContextVar("current_timezone", default=datetime.timezone.utc)
 
 
-def get_timezone() -> BaseTzInfo:
+def get_timezone() -> datetime.tzinfo:
     """Return currently active timezone."""
     return _current_timezone.get()
 
 
-def set_timezone(timezone: str | BaseTzInfo) -> None:
+def set_timezone(timezone: str | datetime.tzinfo) -> None:
     """Set timezone for current request."""
     if isinstance(timezone, str):
         timezone = babel_get_timezone(timezone)
-    assert not isinstance(timezone, str)
     _current_timezone.set(timezone)
 
 
 @contextmanager
-def switch_timezone(tz: str | BaseTzInfo) -> typing.Generator[None, None, None]:
+def switch_timezone(tz: str | datetime.tzinfo) -> typing.Generator[None, None, None]:
     """
     Temporary switch current timezone for a code block. The previous timezone will be restored after exiting the
     manager. Use is any other context manager:
 
     ```python
-    from starlette_babel import set_timezone, timezone
+    from starlette_babel import switch_timezone
 
-    with set_timezone('Europe/Minsk'):
+    with switch_timezone('Europe/Minsk'):
         ...
+    ```
     """
     old_timezone = get_timezone()
     set_timezone(tz)
-    yield
-    set_timezone(old_timezone)
+    try:
+        yield
+    finally:
+        set_timezone(old_timezone)
 
 
 def to_user_timezone(dt: datetime.datetime) -> datetime.datetime:
     """Convert datetime instance into current timezone."""
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
     tzinfo = get_timezone()
     return dt.astimezone(tzinfo)
 
@@ -53,8 +54,12 @@ def to_user_timezone(dt: datetime.datetime) -> datetime.datetime:
 def to_utc(dt: datetime.datetime) -> datetime.datetime:
     """Convert datetime instance to UTC and drop tzinfo (creates a naive datetime object)."""
     if dt.tzinfo is None:
-        dt = get_timezone().localize(dt)
-    return dt.astimezone(UTC).replace(tzinfo=None)
+        tz = get_timezone()
+        if hasattr(tz, "localize"):
+            dt = tz.localize(dt)
+        else:
+            dt = dt.replace(tzinfo=tz)
+    return dt.astimezone(datetime.timezone.utc).replace(tzinfo=None)
 
 
 def now() -> datetime.datetime:
@@ -86,7 +91,7 @@ class TimezoneFromQuery:
         self.query_param = query_param
 
     def __call__(self, conn: HTTPConnection) -> str | None:
-        return typing.cast(str, conn.query_params.get(self.query_param, ""))
+        return conn.query_params.get(self.query_param)
 
 
 class TimezoneFromCookie:
@@ -96,7 +101,7 @@ class TimezoneFromCookie:
         self.cookie_name = cookie_name
 
     def __call__(self, conn: HTTPConnection) -> str | None:
-        return conn.cookies.get(self.cookie_name, "")
+        return conn.cookies.get(self.cookie_name)
 
 
 class TimezoneMiddleware:

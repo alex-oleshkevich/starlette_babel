@@ -1,10 +1,12 @@
 import datetime
-import pytest
 import typing
+
+import pytest
 from babel import Locale
 
 from starlette_babel import switch_locale, switch_timezone
 from starlette_babel.formatters import (
+    format_compact_decimal,
     format_currency,
     format_date,
     format_datetime,
@@ -14,7 +16,9 @@ from starlette_babel.formatters import (
     format_scientific,
     format_time,
     format_timedelta,
+    parse_decimal,
     parse_locale,
+    parse_number,
 )
 
 christmas = datetime.datetime(2022, 12, 25, 12, 30, 59)
@@ -190,3 +194,39 @@ def test_format_scientific(
 ) -> None:
     assert format_scientific(1234567, decimal_quantization=True) == "1,234567E6"
     assert format_scientific(1234567, format="##0.##E00", decimal_quantization=True) == "1,23E06"
+
+
+def test_format_compact_decimal(
+    bel_tz: typing.Generator[None, None, None], bel_locale: typing.Generator[None, None, None]
+) -> None:
+    assert format_compact_decimal(1_200_000) == "1\xa0млн"
+    assert format_compact_decimal(1_200_000, fraction_digits=1) == "1,2\xa0млн"
+    with switch_locale("en_US"):
+        assert format_compact_decimal(1_200_000) == "1M"
+        assert format_compact_decimal(1_200_000, fraction_digits=1) == "1.2M"
+        assert format_compact_decimal(1_200_000, format_type="long") == "1 million"
+
+
+def test_parse_decimal(
+    bel_tz: typing.Generator[None, None, None], bel_locale: typing.Generator[None, None, None]
+) -> None:
+    import decimal as _decimal
+
+    assert parse_decimal("100\xa0500,42") == _decimal.Decimal("100500.42")
+    with switch_locale("en_US"):
+        assert parse_decimal("100,500.42") == _decimal.Decimal("100500.42")
+
+
+def test_parse_number(
+    bel_tz: typing.Generator[None, None, None], bel_locale: typing.Generator[None, None, None]
+) -> None:
+    assert parse_number("100\xa0500") == 100500
+    with switch_locale("en_US"):
+        assert parse_number("100,500") == 100500
+
+
+def test_format_interval_raises_for_type_mismatch(
+    bel_tz: typing.Generator[None, None, None], bel_locale: typing.Generator[None, None, None]
+) -> None:
+    with pytest.raises(TypeError, match="same type"):
+        format_interval(datetime.time(8, 15), datetime.date(2022, 1, 1))
