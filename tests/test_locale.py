@@ -7,6 +7,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from starlette_babel.locale import (
     LocaleFromCookie,
+    LocaleFromHeader,
     LocaleFromQuery,
     LocaleMiddleware,
     get_language,
@@ -76,6 +77,29 @@ def test_locale_from_header_handles_spaces_in_qvalue() -> None:
     """Accept-Language q-values with surrounding spaces should be parsed correctly."""
     client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
     assert client.get("/", headers={"accept-language": "fr ; q=0.9 , be_BY"}).json() == ["be", "BY"]
+
+
+def _header_conn(header: str) -> HTTPConnection:
+    scope = {"type": "http", "headers": [(b"accept-language", header.encode())]}
+    return HTTPConnection(scope)
+
+
+def test_locale_from_header_falls_back_to_language_subtag() -> None:
+    """A region-qualified top preference should match a language-only supported locale."""
+    selector = LocaleFromHeader(supported_locales=["ca", "es", "eu", "nl", "sv", "en"])
+    assert selector(_header_conn("ca-ES,es;q=0.9,en;q=0.8")) == "ca"
+
+
+def test_locale_from_header_falls_back_for_bare_region_tag() -> None:
+    """A lone region-qualified tag should match its language-only supported locale."""
+    selector = LocaleFromHeader(supported_locales=["ca", "es", "eu", "nl", "sv", "en"])
+    assert selector(_header_conn("ca-ES")) == "ca"
+
+
+def test_locale_from_header_prefers_exact_match_over_subtag_fallback() -> None:
+    """An exact full-tag match should win over a language-only fallback at the same priority."""
+    selector = LocaleFromHeader(supported_locales=["en", "en_gb"])
+    assert selector(_header_conn("en-GB")) == "en_gb"
 
 
 def test_locale_middleware_detects_locale_from_header_with_wildcard() -> None:

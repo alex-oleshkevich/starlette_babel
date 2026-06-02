@@ -104,6 +104,10 @@ class LocaleFromHeader:
 
             if lang in self.supported_locales:
                 return lang
+
+            language_subtag = lang.split("_")[0]
+            if language_subtag in self.supported_locales:
+                return language_subtag
         return None
 
     @staticmethod
