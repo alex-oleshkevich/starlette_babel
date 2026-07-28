@@ -1,7 +1,8 @@
+import contextlib
 import contextvars as cv
+import re
 import typing
 from contextlib import contextmanager
-from functools import lru_cache
 
 from babel import Locale
 from starlette.datastructures import MutableHeaders
@@ -85,6 +86,9 @@ class LocaleFromCookie:
         return conn.cookies.get(self.cookie_name)
 
 
+_QVALUE_RE = re.compile(r"q=(0(?:\.[0-9]{0,3})?|1(?:\.0{0,3})?)")
+
+
 class LocaleFromHeader:
     """
     Select locale from Accept-Language header.
@@ -93,38 +97,78 @@ class LocaleFromHeader:
     """
 
     def __init__(self, supported_locales: typing.Iterable[str]) -> None:
-        self.supported_locales = list(map(str.lower, supported_locales))
+        self.supported_locales = [x.lower().replace("-", "_") for x in supported_locales]
 
     def __call__(self, conn: HTTPConnection) -> str | None:
-        header = conn.headers.get("accept-language", "").lower()
-        for lang, _ in self._get_languages_from_header(header):
-            lang = lang.lower().replace("-", "_")
-            if lang == "*":
-                break
+        header = ", ".join(conn.headers.getlist("accept-language")).lower()
+        collapsed: dict[str, float] = {}
+        for lang, weight in self._parse(header):
+            lang = lang.replace("-", "_")
+            collapsed[lang] = max(weight, collapsed.get(lang, 0.0))
 
-            if lang in self.supported_locales:
-                return lang
+        ranges = list(collapsed.items())
+        excluded = {lang for lang, weight in ranges if weight <= 0}
+
+        # RFC 4647 3.3.1: "*" speaks only for locales that no explicit range names.
+        named = {lang for lang, _ in ranges if lang != "*"}
+
+        for lang, _ in ranges:
+            if lang in excluded:
+                continue
+
+            if lang == "*":
+                for candidate in self.supported_locales:
+                    if not any(self._matches(other, candidate) for other in named):
+                        return candidate
+                continue
+
+            if match := self._match(lang, excluded):
+                return match
+
         return None
 
-    @staticmethod
-    @lru_cache(maxsize=1000)
-    def _get_languages_from_header(header: str) -> list[tuple[str, float]]:
-        parts = header.split(",")
+    def _parse(self, header: str) -> list[tuple[str, float]]:
+        specs = header.split(",")
         result = []
-        for part in parts:
-            part = part.strip()
-            if ";" in part:
-                locale, _, qpart = part.partition(";")
-                locale = locale.strip()
-                try:
-                    priority = float(qpart.strip()[2:])
-                except (ValueError, IndexError):
-                    priority = 1.0
-            else:
-                locale = part
-                priority = 1.0
-            result.append((locale, priority))
+        for spec in specs:
+            spec = spec.strip()
+            if not spec:
+                continue
+
+            weight = 1000
+            locale, separator, weight_spec = spec.partition(";")
+            locale = locale.strip()
+            if not locale:
+                continue
+
+            if separator:
+                match = _QVALUE_RE.fullmatch(weight_spec.strip())
+                if match is None:
+                    continue
+                weight = float(match.group(1))
+
+            result.append((locale, weight))
         return sorted(result, key=lambda x: x[1], reverse=True)
+
+    def _matches(self, lang_range: str, locale: str) -> bool:
+        return any(
+            (
+                lang_range == locale,
+                locale.startswith(f"{lang_range}_"),
+            )
+        )
+
+    def _match(self, lang_range: str, excluded: set[str]) -> str | None:
+        for locale in self.supported_locales:
+            if locale == lang_range:
+                return locale
+
+        for locale in self.supported_locales:
+            if locale in excluded:
+                continue
+            if self._matches(lang_range, locale):
+                return locale
+        return None
 
 
 class LocaleFromUser:

@@ -53,9 +53,6 @@ def test_locale_middleware_detects_locale_from_cookie_using_custom_name() -> Non
     (
         "en-US,en;q=0.9,ru-BY;q=0.8,ru;q=0.7,be-BY;q=0.6,be;q=0.5,pl;q=0.4,de;q=0.3",
         "en-US,en;q=0.9;q=0.8,ru-BY;q=0.8,ru;q=0.7,be-BY;q=0.6,be;q=0.5,pl;q=0.4,de;q=0.3",
-        "be_BY;q=0.9;q=0.8",
-        "be_BY;q=",
-        "be_BY;",
         "be_BY",
     ),
 )
@@ -63,6 +60,25 @@ def test_locale_middleware_detects_locale_from_header(header: str) -> None:
     """It should read and set locale from the accept-language header."""
     client = TestClient(LocaleMiddleware(app, locales=["be_BY"]))
     assert client.get("/", headers={"accept-language": header}).json() == ["be", "BY"]
+
+
+@pytest.mark.parametrize(
+    "header",
+    (
+        "fr;q=100,be;q=0.9",
+        "fr;q=-1,be;q=0.9",
+        "fr;q=nan,be;q=0.9",
+        "fr;q=1.001,be;q=0.9",
+        "fr;q=0.1234,be;q=0.9",
+        "fr;q=,be;q=0.9",
+        "fr;,be;q=0.9",
+        "fr;q=.9,be;q=0.9",
+        "fr;q=0.8;q=0.7,be;q=0.9",
+    ),
+)
+def test_locale_middleware_ignores_invalid_language_members(header: str) -> None:
+    client = TestClient(LocaleMiddleware(app, locales=["fr", "be"], default_locale="be"))
+    assert client.get("/", headers={"accept-language": header}).json() == ["be", None]
 
 
 def test_locale_from_header_respects_implicit_priority() -> None:
@@ -81,13 +97,90 @@ def test_locale_from_header_handles_spaces_in_qvalue() -> None:
 def test_locale_middleware_detects_locale_from_header_with_wildcard() -> None:
     """It should handle a case when accept-language has wildcard '*' value."""
     client = TestClient(LocaleMiddleware(app, locales=["be_BY"]))
-    assert client.get("/", headers={"accept-language": "*"}).json() == ["en", "US"]
+    assert client.get("/", headers={"accept-language": "*"}).json() == ["be", "BY"]
+
+
+def test_locale_middleware_detects_locale_hyphenated() -> None:
+    client = TestClient(LocaleMiddleware(app, locales=["be-BY"]))
+    assert client.get("/", headers={"accept-language": "be-BY"}).json() == ["be", "BY"]
+
+
+def test_locale_middleware_detects_locale_prefix() -> None:
+    client = TestClient(LocaleMiddleware(app, locales=["en", "en_US"]))
+    assert client.get("/", headers={"accept-language": "en-US"}).json() == ["en", "US"]
+
+
+def test_locale_middleware_detects_locale_with_invalid_weight() -> None:
+    client = TestClient(LocaleMiddleware(app, locales=["en", "en_US"]))
+    assert client.get("/", headers={"accept-language": "en-US;q=100"}).json() == ["en", "US"]
+    assert client.get("/", headers={"accept-language": "en-US;q=-1"}).json() == ["en", "US"]
+
+
+def test_locale_middleware_detects_locale_from_header_with_locale_after_wildcard() -> None:
+    """It should handle a case when accept-language has locale after wildcard '*' value."""
+    client = TestClient(LocaleMiddleware(app, locales=["en", "es"]))
+    assert client.get("/", headers={"accept-language": "*, es;q=0.1"}).json() == ["en", None]
+
+
+def test_locale_middleware_detects_locale_from_header_with_locale_after_excluded_wildcard() -> None:
+    """It should handle a case when accept-language has locale after excluded wildcard '*;q=0' value."""
+    client = TestClient(LocaleMiddleware(app, locales=["en", "es"]))
+    assert client.get("/", headers={"accept-language": "*;q=0, es;q=0.1"}).json() == ["es", None]
+
+
+def test_locale_middleware_detects_locale_ignores_excluded() -> None:
+    """
+    A q=0 range refuses only the locales it covers, and nothing broader.
+
+    Under basic filtering "en-GB" covers en_GB but not en, so "en;q=1, en-GB;q=0" refuses en_GB while
+    leaving en selectable.
+    """
+    header = {"accept-language": "en;q=1, en-gb;q=0"}
+
+    refused = TestClient(LocaleMiddleware(app, locales=["en_GB", "fr"], default_locale="fr"))
+    assert refused.get("/", headers=header).json() == ["fr", None]
+
+    allowed = TestClient(LocaleMiddleware(app, locales=["en", "fr"], default_locale="fr"))
+    assert allowed.get("/", headers=header).json() == ["en", None]
+
+
+def test_locale_middleware_combines_repeated_header_lines() -> None:
+    """
+    Repeated accept-language field lines form a single comma-joined value.
+
+    Per RFC 9110 5.2 the two lines below mean "fr;q=0.5, be", so be wins with its implicit q=1.
+    """
+    client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
+    headers = [("accept-language", "fr;q=0.5"), ("accept-language", "be")]
+    assert client.get("/", headers=headers).json() == ["be", "BY"]
 
 
 def test_locale_middleware_supports_language_shortcuts() -> None:
     """It should properly detect locale when user defines list of supported locales without region."""
     client = TestClient(LocaleMiddleware(app, locales=["be"]))
     assert client.get("/?lang=be_BY").json() == ["be", None]
+
+
+def test_locale_middleware_combines_accept_language_field_lines() -> None:
+    client = TestClient(LocaleMiddleware(app, locales=["fr", "be"], default_locale="fr"))
+    response = client.get(
+        "/",
+        headers=[
+            ("accept-language", "fr;q=0.5"),
+            ("accept-language", "be"),
+        ],
+    )
+    assert response.json() == ["be", None]
+
+
+def test_locale_middleware_uses_basic_filtering_direction() -> None:
+    client = TestClient(LocaleMiddleware(app, locales=["fr", "de"], default_locale="fr"))
+    assert client.get("/", headers={"accept-language": "de-DE"}).json() == ["fr", None]
+
+
+def test_locale_middleware_specific_exclusion_overrides_broad_range() -> None:
+    client = TestClient(LocaleMiddleware(app, locales=["fr", "en-GB"], default_locale="fr"))
+    assert client.get("/", headers={"accept-language": "en;q=1,en-GB;q=0"}).json() == ["fr", None]
 
 
 class _User:
