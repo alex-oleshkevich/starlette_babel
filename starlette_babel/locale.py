@@ -98,7 +98,7 @@ def parse_accept_language(header: str) -> tuple[tuple[str, float], ...]:
     carries no reliable preference.
     """
     result: list[tuple[str, float]] = []
-    for spec in header.split(","):
+    for spec in header.lower().split(","):
         spec = spec.strip()
         if not spec:
             continue
@@ -138,9 +138,8 @@ class LocaleFromHeader:
                 continue
 
             if lang_range == "*":
-                for candidate in self.supported_locales:
-                    if not any(self._matches(other, candidate) for other in named):
-                        return candidate
+                if candidate := self._handle_wildcard(named):
+                    return candidate
                 continue
 
             if lang_range in self.supported_locales:
@@ -154,6 +153,16 @@ class LocaleFromHeader:
 
     def _matches(self, lang_range: str, locale: str) -> bool:
         return lang_range == locale or locale.startswith(f"{lang_range}_")
+
+    def _handle_wildcard(self, named: set[str]) -> str | None:
+        # `named` is an explicit list ranges from the header
+        # the rfc 2616#14.4 tells that *;q=1 should match any language that is not listed in named:
+        # "The special range "*", if present in the Accept-Language field,
+        # matches every tag not matched by any other range present in the Accept-Language field."
+        for candidate in self.supported_locales:
+            if not any(self._matches(other, candidate) for other in named):
+                return candidate
+        return None
 
 
 class LocaleFromUser:

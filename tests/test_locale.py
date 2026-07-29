@@ -12,6 +12,7 @@ from starlette_babel.locale import (
     get_language,
     get_locale,
     negotiate_locale,
+    parse_accept_language,
     set_locale,
     switch_locale,
 )
@@ -48,6 +49,98 @@ def test_locale_middleware_detects_locale_from_cookie_using_custom_name() -> Non
     assert client.get("/").json() == ["be", "BY"]
 
 
+class TestParseAcceptLanguage:
+    def test_bare_range_carries_implicit_weight(self) -> None:
+        """RFC 9110 12.5.4 states parenthetically that "no value is the same as q=1"."""
+        assert parse_accept_language("en") == (("en", 1.0),)
+
+    def test_orders_members_by_descending_weight(self) -> None:
+        """The result is a language priority list, so position in the header does not decide."""
+        assert parse_accept_language("fr;q=0.5, en") == (("en", 1.0), ("fr", 0.5))
+
+    def test_preserves_header_order_within_equal_weights(self) -> None:
+        """Members sharing a weight keep the order the client wrote them in."""
+        assert parse_accept_language("en;q=0.5,fr;q=0.5,de;q=0.5") == (("en", 0.5), ("fr", 0.5), ("de", 0.5))
+
+    def test_tolerates_optional_whitespace(self) -> None:
+        """Optional whitespace around the member and weight delimiters is tolerated."""
+        assert parse_accept_language("fr ; q=0.9 , be_BY") == (("be_bddy", 1.0), ("fr", 0.9))
+
+    @pytest.mark.parametrize(
+        ("weight_spec", "expected"),
+        (
+            ("q=0", 0.0),
+            ("q=1", 1.0),
+            ("q=0.", 0.0),
+            ("q=1.", 1.0),
+            ("q=1.0", 1.0),
+            ("q=0.123", 0.123),
+            ("q=0.000", 0.0),
+            ("q=1.000", 1.0),
+        ),
+    )
+    def test_accepts_every_weight_the_qvalue_grammar_allows(self, weight_spec: str, expected: float) -> None:
+        """
+        The full qvalue grammar is honoured, including its odd-looking corners.
+
+        RFC 9110 12.4.2 fixes qvalue as ( "0" [ "." 0*3DIGIT ] ) / ( "1" [ "." 0*3("0") ] ). The
+        fractional part is optional and may be empty after the dot, so 'q=0.' and 'q=1.' are as legal
+        as 'q=0.123'; only trailing zeroes are permitted after '1'.
+        """
+        assert parse_accept_language(f"en;{weight_spec}") == (("en", expected),)
+
+    @pytest.mark.parametrize(
+        "weight_spec",
+        (
+            "q=100",
+            "q=-1",
+            "q=nan",
+            "q=1.001",
+            "q=0.1234",
+            "q=",
+            "",
+            "q=.9",
+            "q=0.8;q=0.7",
+            "q=0.5;charset=utf-8",
+        ),
+    )
+    def test_drops_member_whose_weight_breaks_the_qvalue_grammar(self, weight_spec: str) -> None:
+        """A member whose weight breaks the grammar is dropped, not repaired."""
+        assert parse_accept_language(f"fr;{weight_spec},be;q=0.9") == (("be", 0.9),)
+
+    def test_keeps_a_refused_member(self) -> None:
+        """'q=0' parses; it does not vanish."""
+        assert parse_accept_language("en;q=0") == (("en", 0.0),)
+
+    def test_drops_member_without_a_language_range(self) -> None:
+        """A member carrying only a weight names no language and is dropped."""
+        assert parse_accept_language(";q=1, be;q=0.5") == (("be", 0.5),)
+
+    @pytest.mark.parametrize("header", ("", "   ", ",", ",,"))
+    def test_returns_nothing_for_a_header_naming_no_language(self, header: str) -> None:
+        """RFC 9110 12.5.4 allows the field to be empty, and empty list members carry no preference."""
+        assert parse_accept_language(header) == ()
+
+    def test_skips_empty_members_between_ranges(self) -> None:
+        """An empty list member is skipped without disturbing the ranges around it."""
+        assert parse_accept_language("en, , fr") == (("en", 1.0), ("fr", 1.0))
+
+    def test_keeps_the_wildcard_as_an_ordinary_range(self) -> None:
+        """'*' is parsed as a range like any other, weight included."""
+        assert parse_accept_language("*;q=0.2") == (("*", 0.2),)
+
+    def test_keeps_duplicate_ranges(self) -> None:
+        """A range repeated at two weights is returned twice.
+
+        RFC 9110 12.5.4 does not forbid the repetition, and deciding which weight wins is a matching
+        concern; `LocaleFromHeader` collapses duplicates to their highest weight before matching."""
+        assert parse_accept_language("en;q=0.1, en;q=0.9") == (("en", 0.9), ("en", 0.1))
+
+    def test_normalises_case(self) -> None:
+        """Ranges are returned exactly as written."""
+        assert parse_accept_language("en-US;q=0.5") == (("en-us", 0.5),)
+
+
 @pytest.mark.parametrize(
     "header",
     (
@@ -69,33 +162,6 @@ def test_locale_middleware_detects_locale_from_header(header: str) -> None:
     assert client.get("/", headers={"accept-language": header}).json() == ["be", "BY"]
 
 
-@pytest.mark.parametrize(
-    "header",
-    (
-        "fr;q=100,be;q=0.9",
-        "fr;q=-1,be;q=0.9",
-        "fr;q=nan,be;q=0.9",
-        "fr;q=1.001,be;q=0.9",
-        "fr;q=0.1234,be;q=0.9",
-        "fr;q=,be;q=0.9",
-        "fr;,be;q=0.9",
-        "fr;q=.9,be;q=0.9",
-        "fr;q=0.8;q=0.7,be;q=0.9",
-    ),
-)
-def test_locale_middleware_ignores_invalid_language_members(header: str) -> None:
-    """
-    A member whose weight breaks the qvalue grammar is dropped, not repaired.
-
-    RFC 9110 12.4.2 fixes qvalue as ( "0" [ "." 0*3DIGIT ] ) / ( "1" [ "." 0*3("0") ] ), so every
-    header above states 'fr' with a weight outside that grammar: out of range, negative, non-numeric,
-    too many decimals, absent, or repeated. 'fr' is supported and listed first, so it would win if
-    the weight were salvaged into some default; getting 'be' back proves the member was discarded.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["fr", "be"], default_locale="be"))
-    assert client.get("/", headers={"accept-language": header}).json() == ["be", None]
-
-
 def test_locale_from_header_respects_implicit_priority() -> None:
     """
     A member with no q= carries weight 1.0, so position in the header does not decide.
@@ -105,17 +171,6 @@ def test_locale_from_header_respects_implicit_priority() -> None:
     """
     client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
     assert client.get("/", headers={"accept-language": "fr;q=0.9,be_BY"}).json() == ["be", "BY"]
-
-
-def test_locale_from_header_handles_spaces_in_qvalue() -> None:
-    """
-    Optional whitespace around the member and weight delimiters is tolerated.
-
-    RFC 9110 12.4.2 defines weight as `OWS ";" OWS "q=" qvalue`, and the list rule for
-    `Accept-Language` permits OWS around the commas, so 'fr ; q=0.9 , be_BY' is a well-formed header.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
-    assert client.get("/", headers={"accept-language": "fr ; q=0.9 , be_BY"}).json() == ["be", "BY"]
 
 
 def test_locale_middleware_detects_locale_from_header_with_wildcard() -> None:
@@ -181,18 +236,6 @@ def test_locale_middleware_detects_locale_from_header_with_locale_after_excluded
     """
     client = TestClient(LocaleMiddleware(app, locales=["en", "es"]))
     assert client.get("/", headers={"accept-language": "*;q=0, es;q=0.1"}).json() == ["es", None]
-
-
-def test_locale_middleware_ignores_member_without_a_language_range() -> None:
-    """
-    A member carrying only a weight names no language and is dropped.
-
-    RFC 9110 12.5.4 requires each member to be a `language-range [ weight ]`, and RFC 4647 2.1 gives
-    language-range at least one alphabetic character. ';q=1' satisfies neither, so it cannot outrank
-    the well-formed be;q=0.5 despite its higher weight.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["fr", "be"], default_locale="fr"))
-    assert client.get("/", headers={"accept-language": ";q=1, be;q=0.5"}).json() == ["be", None]
 
 
 def test_locale_middleware_wildcard_claims_nothing_when_all_locales_are_named() -> None:
