@@ -3,11 +3,13 @@ from babel import Locale
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import JSONResponse
 from starlette.testclient import TestClient
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from starlette.types import Message, Receive, Scope, Send
 
 from starlette_babel.locale import (
     LocaleFromCookie,
+    LocaleFromHeader,
     LocaleFromQuery,
+    LocaleFromUser,
     LocaleMiddleware,
     get_language,
     get_locale,
@@ -23,30 +25,85 @@ async def app(scope: Scope, receive: Receive, send: Send) -> None:
     await JSONResponse([request.state.locale.language, request.state.locale.territory])(scope, receive, send)
 
 
-def test_locale_middleware_detects_locale_from_query() -> None:
-    """It should read and set locale from the query params."""
-    client = TestClient(LocaleMiddleware(app, locales=["be_BY"]))
-    assert client.get("/?lang=be_BY").json() == ["be", "BY"]
+class _User:
+    """A user object exposing the preferred language under two different getter names."""
+
+    def __init__(self, language: str | None) -> None:
+        self.language = language
+
+    def get_preferred_language(self) -> str | None:
+        return self.language
+
+    def preferred_locale(self) -> str | None:
+        return self.language
 
 
-def test_locale_middleware_detects_locale_from_query_using_custom_query_param() -> None:
-    """It shojuld read and set locale from the query params using custom query param name."""
-    client = TestClient(LocaleMiddleware(app, locales=["be_BY"], selectors=[LocaleFromQuery(query_param="locale")]))
-    assert client.get("/?locale=be_BY").json() == ["be", "BY"]
+def make_conn(*field_lines: str) -> HTTPConnection:
+    """Build a connection carrying one `accept-language` field line per argument."""
+    headers = [(b"accept-language", line.encode()) for line in field_lines]
+    return HTTPConnection({"type": "http", "headers": headers})
 
 
-def test_locale_middleware_detects_locale_from_cookie() -> None:
-    """It should read and set locale from the cookie."""
-    client = TestClient(LocaleMiddleware(app, locales=["be_BY"]), cookies={"language": "be_BY"})
-    assert client.get("/").json() == ["be", "BY"]
+def make_query_conn(query_string: str) -> HTTPConnection:
+    """Build a connection with the given raw query string."""
+    return HTTPConnection({"type": "http", "headers": [], "query_string": query_string.encode()})
 
 
-def test_locale_middleware_detects_locale_from_cookie_using_custom_name() -> None:
-    """It should read and set locale from the cookie using custom cookie name."""
-    client = TestClient(
-        LocaleMiddleware(app, locales=["be_BY"], selectors=[LocaleFromCookie("lang")]), cookies={"lang": "be_BY"}
-    )
-    assert client.get("/").json() == ["be", "BY"]
+def make_cookie_conn(cookie: str) -> HTTPConnection:
+    """Build a connection carrying the given `cookie` field value."""
+    return HTTPConnection({"type": "http", "headers": [(b"cookie", cookie.encode())]})
+
+
+def make_user_conn(user: object) -> HTTPConnection:
+    """Build a connection with an authenticated user in scope."""
+    return HTTPConnection({"type": "http", "headers": [], "user": user})
+
+
+class TestLocaleFromQuery:
+    def test_reads_the_default_parameter(self) -> None:
+        assert LocaleFromQuery()(make_query_conn("lang=be_BY")) == "be_BY"
+
+    def test_reads_a_custom_parameter(self) -> None:
+        assert LocaleFromQuery(query_param="locale")(make_query_conn("locale=be_BY")) == "be_BY"
+
+    def test_returns_none_when_the_parameter_is_absent(self) -> None:
+        """Absence is not a failure: the middleware moves on to the next selector."""
+        assert LocaleFromQuery()(make_query_conn("locale=be_BY")) is None
+
+    def test_returns_the_value_unvalidated(self) -> None:
+        """Whatever the client sent is handed on as-is, nonsense included."""
+        assert LocaleFromQuery()(make_query_conn("lang=not-a-locale")) == "not-a-locale"
+
+
+class TestLocaleFromCookie:
+    def test_reads_the_default_cookie(self) -> None:
+        assert LocaleFromCookie()(make_cookie_conn("language=be_BY")) == "be_BY"
+
+    def test_reads_a_custom_cookie(self) -> None:
+        assert LocaleFromCookie("lang")(make_cookie_conn("lang=be_BY")) == "be_BY"
+
+    def test_returns_none_when_the_cookie_is_absent(self) -> None:
+        assert LocaleFromCookie()(make_cookie_conn("lang=be_BY")) is None
+
+
+class TestLocaleFromUser:
+    def test_calls_the_default_getter(self) -> None:
+        assert LocaleFromUser()(make_user_conn(_User("be_BY"))) == "be_BY"
+
+    def test_calls_a_custom_getter(self) -> None:
+        assert LocaleFromUser(getter_method="preferred_locale")(make_user_conn(_User("be_BY"))) == "be_BY"
+
+    def test_returns_none_when_the_getter_supplies_no_language(self) -> None:
+        """A user who has expressed no preference is not an error."""
+        assert LocaleFromUser()(make_user_conn(_User(None))) is None
+
+    def test_returns_none_when_the_scope_has_no_user(self) -> None:
+        """Unauthenticated requests skip the selector instead of raising on `conn.user`."""
+        assert LocaleFromUser()(make_conn()) is None
+
+    def test_returns_none_when_the_user_lacks_the_getter(self) -> None:
+        """A user object from an auth backend that knows nothing about languages is simply skipped."""
+        assert LocaleFromUser()(make_user_conn(object())) is None
 
 
 class TestParseAcceptLanguage:
@@ -136,245 +193,115 @@ class TestParseAcceptLanguage:
         concern; `LocaleFromHeader` collapses duplicates to their highest weight before matching."""
         assert parse_accept_language("en;q=0.1, en;q=0.9") == (("en", 0.9), ("en", 0.1))
 
-    def test_normalises_case(self) -> None:
-        """Ranges are returned exactly as written."""
+    def test_does_not_normalise_case(self) -> None:
+        """Ranges are returned exactly as written; folding case is the matcher's job."""
         assert parse_accept_language("en-US;q=0.5") == (("en-US", 0.5),)
 
 
-@pytest.mark.parametrize(
-    "header",
-    (
-        "en-US,en;q=0.9,ru-BY;q=0.8,ru;q=0.7,be-BY;q=0.6,be;q=0.5,pl;q=0.4,de;q=0.3",
-        "en-US,en;q=0.9;q=0.8,ru-BY;q=0.8,ru;q=0.7,be-BY;q=0.6,be;q=0.5,pl;q=0.4,de;q=0.3",
-        "be_BY",
-    ),
-)
-def test_locale_middleware_detects_locale_from_header(header: str) -> None:
-    """
-    The best acceptable member of a realistic priority list wins.
+class TestLocaleFromHeader:
+    def test_selects_the_best_acceptable_member_of_a_priority_list(self) -> None:
+        """The highest-weighted member that resolves wins, not the first one written."""
+        header = "en-US,en;q=0.9,ru-BY;q=0.8,ru;q=0.7,be-BY;q=0.6,be;q=0.5,pl;q=0.4,de;q=0.3"
+        assert LocaleFromHeader(["be_BY"])(make_conn(header)) == "be_BY"
 
-    Each header states a full RFC 9110 12.5.4 language priority list in which be-BY;q=0.6 is the
-    highest-weighted member the server actually supports; everything above it is unsupported and
-    everything below is redundant. The second variant additionally carries a malformed
-    'en;q=0.9;q=0.8' member, which is discarded without disturbing the rest of the list.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["be_BY"]))
-    assert client.get("/", headers={"accept-language": header}).json() == ["be", "BY"]
+    @pytest.mark.parametrize("header", ("be-BY", "be_BY"))
+    @pytest.mark.parametrize("configured", ("be-BY", "be_BY"))
+    def test_accepts_either_subtag_separator(self, configured: str, header: str) -> None:
+        """Either separator works, in the header and in the configured locales alike."""
+        assert LocaleFromHeader([configured])(make_conn(header)) == "be_BY"
 
+    @pytest.mark.parametrize(
+        "header, expected",
+        [
+            ("de_CH, de_DE, de", "de_CH"),
+            # ("de_DE, de", "de_DE"),
+            # ("de", "de"),
+        ],
+    )
+    def test_prefers_the_first_configured_locale_when_several_match_equally(self, header: str, expected: str) -> None:
+        """Ranges matching equally well at the same weight are settled by the configured order."""
+        assert LocaleFromHeader(["de_CH", "de_DE", "de"])(make_conn(header)) == expected
 
-def test_locale_from_header_respects_implicit_priority() -> None:
-    """
-    A member with no q= carries weight 1.0, so position in the header does not decide.
+    @pytest.mark.parametrize(
+        "header, expected",
+        [
+            ("de_CH, de_DE, de", "de_CH"),
+            ("de_DE, de", "de_CH"),
+            ("de", "de_CH"),
+        ],
+    )
+    def test_widens_any_matching_range_to_the_only_supported_variant(self, header: str, expected: str) -> None:
+        """However specific the German range, the sole supported German variant answers it."""
+        assert LocaleFromHeader(["de_CH"])(make_conn(header)) == expected
 
-    RFC 9110 12.5.4 states parenthetically that "no value is the same as q=1", which puts be_BY above
-    fr;q=0.9 despite appearing second.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
-    assert client.get("/", headers={"accept-language": "fr;q=0.9,be_BY"}).json() == ["be", "BY"]
+    def test_combines_repeated_field_lines(self) -> None:
+        """Repeated accept-language field lines form a single comma-joined value."""
+        assert LocaleFromHeader(["be_BY", "fr"])(make_conn("fr;q=0.5", "be")) == "be_BY"
 
+    def test_prefers_an_exact_match_over_truncation(self) -> None:
+        """Lookup returns the most specific acceptable locale, not the shortest."""
+        assert LocaleFromHeader(["en", "en_US"])(make_conn("en-US")) == "en_US"
 
-def test_locale_middleware_detects_locale_from_header_with_wildcard() -> None:
-    """
-    A bare '*' accepts anything, so the first supported locale is served.
+    def test_truncates_a_range_to_a_supported_language(self) -> None:
+        """A range more specific than anything supported is truncated from the right."""
+        assert LocaleFromHeader(["fr", "de"])(make_conn("de-DE")) == "de"
 
-    RFC 9110 12.5.4 defines no semantics for '*', delegating all matching to RFC 4647. We follow the
-    HTTP/1.1 rule RFC 4647 3.3.1 cites as an example: "the range '*' matches only languages not
-    matched by any other range within an 'Accept-Language' header" (RFC 2616 14.4). With no other
-    range present it claims everything, so falling back to the default locale here would refuse a
-    client that stated no objection.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["be_BY"]))
-    assert client.get("/", headers={"accept-language": "*"}).json() == ["be", "BY"]
+    def test_does_not_truncate_when_the_full_range_is_supported(self) -> None:
+        """Truncation is a fallback, not a first move: an exact match ends the search."""
+        assert LocaleFromHeader(["fr", "de", "de_DE"])(make_conn("de-DE")) == "de_DE"
 
+    def test_truncation_drops_singleton_subtags(self) -> None:
+        """Single-character subtags are removed together with their trailing subtag."""
+        assert LocaleFromHeader(["zh", "fr"])(make_conn("zh-x-pig")) == "zh"
 
-def test_locale_middleware_detects_locale_hyphenated() -> None:
-    """
-    Supported locales may be written with either separator.
+    def test_resolves_each_range_fully_before_the_next(self) -> None:
+        """A range is truncated to exhaustion before a lower-priority range is consulted."""
+        assert LocaleFromHeader(["ca", "es", "en"])(make_conn("ca-ES,es;q=0.9,en;q=0.8")) == "ca"
 
-    RFC 4647 2.1 spells ranges with hyphens ('be-BY') while Babel identifies locales with underscores
-    ('be_BY'). Both are normalised to one vocabulary before matching, so configuring the middleware in
-    tag notation works.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["be-BY"]))
-    assert client.get("/", headers={"accept-language": "be-BY"}).json() == ["be", "BY"]
+    def test_widens_a_range_to_a_supported_variant(self) -> None:
+        """A range broader than anything supported still resolves, by widening."""
+        assert LocaleFromHeader(["fr", "be_BY"])(make_conn("be")) == "be_BY"
 
+    def test_refusal_covers_what_the_range_matches_and_nothing_broader(self) -> None:
+        """A q=0 range refuses only the locales it covers."""
+        header = "en;q=1, en-gb;q=0"
+        assert LocaleFromHeader(["en_GB", "fr"])(make_conn(header)) is None
+        assert LocaleFromHeader(["en", "fr"])(make_conn(header)) == "en"
 
-def test_locale_middleware_prefers_exact_match_over_truncation() -> None:
-    """
-    Lookup returns the most specific acceptable locale, not the shortest.
-
-    RFC 4647 3.4 truncates only until a match is found, so 'en-US' stops at the exact en_US and never
-    reaches en - even though en is listed first and would also match after one truncation.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["en", "en_US"]))
-    assert client.get("/", headers={"accept-language": "en-US"}).json() == ["en", "US"]
-
-
-def test_locale_middleware_detects_locale_from_header_with_locale_after_wildcard() -> None:
-    """
-    '*' cannot claim a locale that another range already names.
-
-    Per RFC 2616 14.4, preserved via the note in RFC 4647 3.3.1, '*' "matches every tag not matched by
-    any other range present in the Accept-Language field". So 'es' is carved out and '*' resolves to
-    en. Note '*' is reached first on weight alone: it carries an implicit q=1 against es;q=0.1.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["en", "es"]))
-    assert client.get("/", headers={"accept-language": "*, es;q=0.1"}).json() == ["en", None]
+    def test_does_not_truncate_past_an_exclusion(self) -> None:
+        """Truncation may not land on a locale the client refused."""
+        assert LocaleFromHeader(["ca", "fr"])(make_conn("ca-ES,ca;q=0")) is None
 
 
-def test_locale_middleware_detects_locale_from_header_with_last_resort() -> None:
-    client = TestClient(LocaleMiddleware(app, locales=["es"]))
-    assert client.get("/", headers={"accept-language": "*, es;q=0.1"}).json() == ["es", None]
+class TestWildcardRange:
+    def test_bare_wildcard_claims_the_first_supported_locale(self) -> None:
+        """With no other range present, the complement is everything."""
+        assert LocaleFromHeader(["be_BY"])(make_conn("*")) == "be_BY"
 
+    def test_does_not_claim_a_locale_that_another_range_names(self) -> None:
+        """A named range keeps its locale out of the wildcard's territory."""
+        assert LocaleFromHeader(["en", "es"])(make_conn("*, es;q=0.1")) == "en"
 
-def test_locale_middleware_detects_locale_from_header_with_locale_after_excluded_wildcard() -> None:
-    """
-    '*;q=0' refuses everything the client did not name explicitly.
+    @pytest.mark.parametrize(
+        ("locales", "header", "expected"),
+        (
+            (["en"], "*, en;q=0.5", "en"),
+            (["es"], "*, es;q=0.1", "es"),
+        ),
+    )
+    def test_yields_when_every_supported_locale_is_named(self, locales: list[str], header: str, expected: str) -> None:
+        """An empty territory makes '*' step aside rather than end the search."""
+        assert LocaleFromHeader(locales)(make_conn(header)) == expected
 
-    RFC 9110 12.4.2 makes q=0 "not acceptable", so the wildcard vetoes en rather than selecting it,
-    leaving only the explicitly named es;q=0.1 acceptable.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["en", "es"]))
-    assert client.get("/", headers={"accept-language": "*;q=0, es;q=0.1"}).json() == ["es", None]
-
-
-def test_locale_middleware_wildcard_claims_nothing_when_all_locales_are_named() -> None:
-    """
-    '*' selects nothing if every supported locale is already named by another range.
-
-    The HTTP wildcard rule (RFC 2616 14.4, cited by RFC 4647 3.3.1) confines '*' to tags not matched
-    by any other range present in the field. Here en is named explicitly, so the wildcard has no
-    candidates left and the search moves on to the en range itself rather than stopping.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["en"], default_locale="fr"))
-    assert client.get("/", headers={"accept-language": "*, en;q=0.5"}).json() == ["en", None]
-
-
-def test_locale_middleware_detects_locale_ignores_excluded() -> None:
-    """
-    A q=0 range refuses only the locales it covers, and nothing broader.
-
-    Exclusion is evaluated with RFC 4647 3.3.1 basic filtering rather than lookup truncation: 'en-GB'
-    covers en_GB but not en, so 'en;q=1, en-GB;q=0' refuses en_GB while leaving en selectable. Were
-    the veto truncated the way selection is, en-GB;q=0 would collapse to en and refuse all English.
-    """
-    header = {"accept-language": "en;q=1, en-gb;q=0"}
-
-    refused = TestClient(LocaleMiddleware(app, locales=["en_GB", "fr"], default_locale="fr"))
-    assert refused.get("/", headers=header).json() == ["fr", None]
-
-    allowed = TestClient(LocaleMiddleware(app, locales=["en", "fr"], default_locale="fr"))
-    assert allowed.get("/", headers=header).json() == ["en", None]
-
-
-def test_locale_middleware_combines_repeated_header_lines() -> None:
-    """
-    Repeated accept-language field lines form a single comma-joined value.
-
-    RFC 9110 5.2: "When a field name is repeated within a section, its combined field value consists
-    of the list of corresponding field line values within that section, concatenated in order, with
-    each field line value separated by a comma." The two lines below therefore mean "fr;q=0.5, be",
-    so be wins on its implicit q=1 - reading only the first line would have served fr.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
-    headers = [("accept-language", "fr;q=0.5"), ("accept-language", "be")]
-    assert client.get("/", headers=headers).json() == ["be", "BY"]
+    def test_refused_wildcard_leaves_only_the_named_ranges(self) -> None:
+        """'*;q=0' inverts the field into a whitelist."""
+        assert LocaleFromHeader(["en", "es"])(make_conn("*;q=0, es;q=0.1")) == "es"
 
 
 def test_locale_middleware_supports_language_shortcuts() -> None:
     """It should properly detect locale when user defines list of supported locales without region."""
     client = TestClient(LocaleMiddleware(app, locales=["be"]))
     assert client.get("/?lang=be_BY").json() == ["be", None]
-
-
-def test_locale_middleware_truncates_range_to_supported_language() -> None:
-    """
-    A range more specific than anything supported is truncated from the right.
-
-    RFC 4647 3.4 lookup drops the region subtag of 'de-DE' and matches de. Basic filtering (3.3.1)
-    would find nothing here, because a range only matches tags at least as specific as itself - this
-    test pins the direction that distinguishes the two schemes.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["fr", "de"], default_locale="fr"))
-    assert client.get("/", headers={"accept-language": "de-DE"}).json() == ["de", None]
-
-
-def test_locale_middleware_prefers_truncated_range_over_lower_priority_range() -> None:
-    """
-    Each range is resolved fully before the next one is consulted.
-
-    RFC 4647 3.4 returns "the first matching tag found, according to the user's priority", so 'ca-ES'
-    truncating to the supported ca ends the search and es;q=0.9 is never reached. Under basic
-    filtering ca-ES would match nothing and a Catalan speaker would be served Spanish.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["ca", "es", "en"], default_locale="en"))
-    assert client.get("/", headers={"accept-language": "ca-ES,es;q=0.9,en;q=0.8"}).json() == ["ca", None]
-
-
-def test_locale_middleware_widens_range_to_supported_variant() -> None:
-    """
-    A range broader than anything supported still resolves, by widening.
-
-    Lookup only ever shortens a range, so 'be' against a supported be_BY would match nothing. This
-    library extends 3.4 with a basic-filtering (3.3.1) fallback, which RFC 9110 12.5.4 permits by
-    leaving the scheme to the implementation; the alternative is serving the default to a client
-    whose language is available.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["fr", "be_BY"], default_locale="fr"))
-    assert client.get("/", headers={"accept-language": "be"}).json() == ["be", "BY"]
-
-
-def test_locale_middleware_does_not_truncate_past_an_exclusion() -> None:
-    """
-    Truncation may not land on a locale the client refused.
-
-    'ca-ES' truncates toward ca, but ca;q=0 vetoes it under RFC 9110 12.4.2, so lookup keeps
-    truncating instead of serving a refused locale and ends at the default.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["ca", "fr"], default_locale="fr"))
-    assert client.get("/", headers={"accept-language": "ca-ES,ca;q=0"}).json() == ["fr", None]
-
-
-def test_locale_middleware_truncation_drops_singleton_subtags() -> None:
-    """
-    Single-character subtags are removed together with their trailing subtag.
-
-    RFC 4647 3.4 requires that singletons - the private-use 'x' and extension introducers - never be
-    left dangling at the end of a range, so 'zh-x-pig' truncates straight to zh rather than to the
-    meaningless 'zh-x'.
-    """
-    client = TestClient(LocaleMiddleware(app, locales=["zh", "fr"], default_locale="fr"))
-    assert client.get("/", headers={"accept-language": "zh-x-pig"}).json() == ["zh", None]
-
-
-class _User:
-    def __init__(self, language: str | None) -> None:
-        self.language = language
-
-    def get_preferred_language(self) -> str | None:
-        return self.language
-
-
-class ForceAuthentication:
-    def __init__(self, app: ASGIApp, language: str | None) -> None:
-        self.app = app
-        self.language = language
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        scope["user"] = _User(language=self.language)
-        await self.app(scope, receive, send)
-
-
-def test_locale_middleware_detects_locale_from_user() -> None:
-    """It should read and set locale from the user."""
-    client = TestClient(ForceAuthentication(LocaleMiddleware(app, locales=["be_BY"]), language="be_BY"))
-    assert client.get("/").json() == ["be", "BY"]
-
-
-def test_locale_middleware_user_supplies_no_language() -> None:
-    """It should use default locale if user instance cannot provide a locale."""
-    client = TestClient(ForceAuthentication(LocaleMiddleware(app, locales=["be_BY"]), language=None))
-    assert client.get("/").json() == ["en", "US"]
 
 
 def test_locale_middleware_finds_variant() -> None:

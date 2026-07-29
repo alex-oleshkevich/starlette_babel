@@ -1,5 +1,3 @@
-ruff := "ruff@0.15.5"
-
 default:
     @just --list
 

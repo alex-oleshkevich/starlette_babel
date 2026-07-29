@@ -119,12 +119,16 @@ def parse_accept_language(header: str) -> tuple[tuple[str, float], ...]:
     return tuple(sorted(result, key=lambda x: x[1], reverse=True))
 
 
+EXACT_MATCH = 2
+PREFIX_MATCH = 1
+
+
 class LocaleFromHeader:
     def __init__(self, supported_locales: typing.Iterable[str]) -> None:
-        self.supported_locales = [x.lower().replace("-", "_") for x in supported_locales]
+        self.supported_locales = [x.replace("-", "_") for x in supported_locales]
 
     def __call__(self, conn: HTTPConnection) -> str | None:
-        header = ", ".join(conn.headers.getlist("accept-language")).lower()
+        header = ", ".join(conn.headers.getlist("accept-language"))
         collapsed: dict[str, float] = {}
         for lang_range, weight in parse_accept_language(header):
             lang_range = lang_range.replace("-", "_")
@@ -132,8 +136,10 @@ class LocaleFromHeader:
 
         ranges = list(collapsed.items())
         named = {lang_range for lang_range, _ in ranges if lang_range != "*"}
+        excluded = {lang_range.lower() for lang_range, weight in ranges if weight <= 0}
 
-        for lang_range, weight in ranges:
+        top_candidates: list[tuple[float, int, int, str]] = []
+        for lang_range, weight in ranges:  # ordered by weight
             if weight <= 0:
                 continue
 
@@ -142,17 +148,24 @@ class LocaleFromHeader:
                     return candidate
                 continue
 
-            if lang_range in self.supported_locales:
-                return lang_range
+            for position, candidate in enumerate(self.supported_locales):
+                if rank := self._matches(lang_range, candidate):
+                    top_candidates.append((weight, rank, -position, candidate))
 
-            for candidate in self.supported_locales:
-                if any(self._matches(other, candidate) for other in named):
-                    return candidate
+        top_candidates = [c for c in top_candidates if c[3].lower() not in excluded]
+        if not top_candidates:
+            return None
 
+        return max(top_candidates)[3]
+
+    def _matches(self, lang_range: str, locale: str) -> int | None:
+        if lang_range.lower() == locale.lower():
+            return EXACT_MATCH
+
+        lang, _, _ = lang_range.partition("_")
+        if locale.startswith(f"{lang.lower()}_") or lang.lower() == locale.lower():
+            return PREFIX_MATCH
         return None
-
-    def _matches(self, lang_range: str, locale: str) -> bool:
-        return lang_range == locale or locale.startswith(f"{lang_range}_")
 
     def _handle_wildcard(self, named: set[str]) -> str | None:
         # `named` is an explicit list ranges from the header
