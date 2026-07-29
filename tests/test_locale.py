@@ -64,7 +64,7 @@ class TestParseAcceptLanguage:
 
     def test_tolerates_optional_whitespace(self) -> None:
         """Optional whitespace around the member and weight delimiters is tolerated."""
-        assert parse_accept_language("fr ; q=0.9 , be_BY") == (("be_bddy", 1.0), ("fr", 0.9))
+        assert parse_accept_language("fr ; q=0.9 , be_BY") == (("be_BY", 1.0), ("fr", 0.9))
 
     @pytest.mark.parametrize(
         ("weight_spec", "expected"),
@@ -138,7 +138,7 @@ class TestParseAcceptLanguage:
 
     def test_normalises_case(self) -> None:
         """Ranges are returned exactly as written."""
-        assert parse_accept_language("en-US;q=0.5") == (("en-us", 0.5),)
+        assert parse_accept_language("en-US;q=0.5") == (("en-US", 0.5),)
 
 
 @pytest.mark.parametrize(

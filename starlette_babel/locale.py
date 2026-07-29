@@ -98,7 +98,7 @@ def parse_accept_language(header: str) -> tuple[tuple[str, float], ...]:
     carries no reliable preference.
     """
     result: list[tuple[str, float]] = []
-    for spec in header.lower().split(","):
+    for spec in header.split(","):
         spec = spec.strip()
         if not spec:
             continue
