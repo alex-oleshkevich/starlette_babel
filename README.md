@@ -227,7 +227,6 @@ The `configure_jinja_env` makes the following utilities available in the templat
 - `_p` - alias for `ngettext`
 
 ```html
-
 <time>{{ _('Welcome') }}</time>
 ```
 
@@ -245,7 +244,6 @@ The `configure_jinja_env` makes the following utilities available in the templat
 All these filters are locale-aware and will format passed data using locale defined format.
 
 ```html
-
 <time>your local time is {{ now|datetime }}</time>
 ```
 
@@ -381,7 +379,7 @@ By default, the middleware will try these selectors:
 
 1. from `tz` query parameter
 2. from `timezone` cookie
-2. from `get_timezone` user method
+3. from `get_timezone` user method
 
 ### Retrieving timezone information
 

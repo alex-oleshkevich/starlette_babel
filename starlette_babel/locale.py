@@ -1,4 +1,3 @@
-import contextlib
 import contextvars as cv
 import re
 import typing
@@ -86,89 +85,75 @@ class LocaleFromCookie:
         return conn.cookies.get(self.cookie_name)
 
 
+# RFC 9110 12.4.2: qvalue = ( "0" [ "." 0*3DIGIT ] ) / ( "1" [ "." 0*3("0") ] ).
 _QVALUE_RE = re.compile(r"q=(0(?:\.[0-9]{0,3})?|1(?:\.0{0,3})?)")
 
 
+def parse_accept_language(header: str) -> tuple[tuple[str, float], ...]:
+    """
+    Parse an Accept-Language field value into (language range, weight) pairs, best first.
+
+    RFC 9110 12.5.4 defines `Accept-Language = #( language-range [ weight ] )`. A member whose weight
+    does not match the qvalue grammar is dropped rather than guessed at, since a malformed member
+    carries no reliable preference.
+    """
+    result: list[tuple[str, float]] = []
+    for spec in header.split(","):
+        spec = spec.strip()
+        if not spec:
+            continue
+
+        weight = 1.0  # RFC 9110 12.5.4: "no value is the same as q=1".
+        lang_range, separator, weight_spec = spec.partition(";")
+        lang_range = lang_range.strip()
+        if not lang_range:
+            continue
+
+        if separator:
+            match = _QVALUE_RE.fullmatch(weight_spec.strip())
+            if match is None:
+                continue
+            weight = float(match.group(1))
+
+        result.append((lang_range, weight))
+    return tuple(sorted(result, key=lambda x: x[1], reverse=True))
+
+
 class LocaleFromHeader:
-    """
-    Select locale from Accept-Language header.
-
-    Will iterate over header value trying to find a supported locale.
-    """
-
     def __init__(self, supported_locales: typing.Iterable[str]) -> None:
         self.supported_locales = [x.lower().replace("-", "_") for x in supported_locales]
 
     def __call__(self, conn: HTTPConnection) -> str | None:
         header = ", ".join(conn.headers.getlist("accept-language")).lower()
         collapsed: dict[str, float] = {}
-        for lang, weight in self._parse(header):
-            lang = lang.replace("-", "_")
-            collapsed[lang] = max(weight, collapsed.get(lang, 0.0))
+        for lang_range, weight in parse_accept_language(header):
+            lang_range = lang_range.replace("-", "_")
+            collapsed[lang_range] = max(weight, collapsed.get(lang_range, 0.0))
 
         ranges = list(collapsed.items())
-        excluded = {lang for lang, weight in ranges if weight <= 0}
+        named = {lang_range for lang_range, _ in ranges if lang_range != "*"}
 
-        # RFC 4647 3.3.1: "*" speaks only for locales that no explicit range names.
-        named = {lang for lang, _ in ranges if lang != "*"}
-
-        for lang, _ in ranges:
-            if lang in excluded:
+        for lang_range, weight in ranges:
+            if weight <= 0:
                 continue
 
-            if lang == "*":
+            if lang_range == "*":
                 for candidate in self.supported_locales:
                     if not any(self._matches(other, candidate) for other in named):
                         return candidate
                 continue
 
-            if match := self._match(lang, excluded):
-                return match
+            if lang_range in self.supported_locales:
+                return lang_range
+
+            for candidate in self.supported_locales:
+                if any(self._matches(other, candidate) for other in named):
+                    return candidate
 
         return None
-
-    def _parse(self, header: str) -> list[tuple[str, float]]:
-        specs = header.split(",")
-        result = []
-        for spec in specs:
-            spec = spec.strip()
-            if not spec:
-                continue
-
-            weight = 1000
-            locale, separator, weight_spec = spec.partition(";")
-            locale = locale.strip()
-            if not locale:
-                continue
-
-            if separator:
-                match = _QVALUE_RE.fullmatch(weight_spec.strip())
-                if match is None:
-                    continue
-                weight = float(match.group(1))
-
-            result.append((locale, weight))
-        return sorted(result, key=lambda x: x[1], reverse=True)
 
     def _matches(self, lang_range: str, locale: str) -> bool:
-        return any(
-            (
-                lang_range == locale,
-                locale.startswith(f"{lang_range}_"),
-            )
-        )
-
-    def _match(self, lang_range: str, excluded: set[str]) -> str | None:
-        for locale in self.supported_locales:
-            if locale == lang_range:
-                return locale
-
-        for locale in self.supported_locales:
-            if locale in excluded:
-                continue
-            if self._matches(lang_range, locale):
-                return locale
-        return None
+        return lang_range == locale or locale.startswith(f"{lang_range}_")
 
 
 class LocaleFromUser:

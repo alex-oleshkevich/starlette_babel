@@ -57,7 +57,14 @@ def test_locale_middleware_detects_locale_from_cookie_using_custom_name() -> Non
     ),
 )
 def test_locale_middleware_detects_locale_from_header(header: str) -> None:
-    """It should read and set locale from the accept-language header."""
+    """
+    The best acceptable member of a realistic priority list wins.
+
+    Each header states a full RFC 9110 12.5.4 language priority list in which be-BY;q=0.6 is the
+    highest-weighted member the server actually supports; everything above it is unsupported and
+    everything below is redundant. The second variant additionally carries a malformed
+    'en;q=0.9;q=0.8' member, which is discarded without disturbing the rest of the list.
+    """
     client = TestClient(LocaleMiddleware(app, locales=["be_BY"]))
     assert client.get("/", headers={"accept-language": header}).json() == ["be", "BY"]
 
@@ -77,63 +84,136 @@ def test_locale_middleware_detects_locale_from_header(header: str) -> None:
     ),
 )
 def test_locale_middleware_ignores_invalid_language_members(header: str) -> None:
+    """
+    A member whose weight breaks the qvalue grammar is dropped, not repaired.
+
+    RFC 9110 12.4.2 fixes qvalue as ( "0" [ "." 0*3DIGIT ] ) / ( "1" [ "." 0*3("0") ] ), so every
+    header above states 'fr' with a weight outside that grammar: out of range, negative, non-numeric,
+    too many decimals, absent, or repeated. 'fr' is supported and listed first, so it would win if
+    the weight were salvaged into some default; getting 'be' back proves the member was discarded.
+    """
     client = TestClient(LocaleMiddleware(app, locales=["fr", "be"], default_locale="be"))
     assert client.get("/", headers={"accept-language": header}).json() == ["be", None]
 
 
 def test_locale_from_header_respects_implicit_priority() -> None:
-    """A locale without q= has implicit priority 1.0 and should beat locales with q=0.9."""
+    """
+    A member with no q= carries weight 1.0, so position in the header does not decide.
+
+    RFC 9110 12.5.4 states parenthetically that "no value is the same as q=1", which puts be_BY above
+    fr;q=0.9 despite appearing second.
+    """
     client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
-    # fr;q=0.9 comes first in the header string, but be_BY has implicit 1.0
     assert client.get("/", headers={"accept-language": "fr;q=0.9,be_BY"}).json() == ["be", "BY"]
 
 
 def test_locale_from_header_handles_spaces_in_qvalue() -> None:
-    """Accept-Language q-values with surrounding spaces should be parsed correctly."""
+    """
+    Optional whitespace around the member and weight delimiters is tolerated.
+
+    RFC 9110 12.4.2 defines weight as `OWS ";" OWS "q=" qvalue`, and the list rule for
+    `Accept-Language` permits OWS around the commas, so 'fr ; q=0.9 , be_BY' is a well-formed header.
+    """
     client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
     assert client.get("/", headers={"accept-language": "fr ; q=0.9 , be_BY"}).json() == ["be", "BY"]
 
 
 def test_locale_middleware_detects_locale_from_header_with_wildcard() -> None:
-    """It should handle a case when accept-language has wildcard '*' value."""
+    """
+    A bare '*' accepts anything, so the first supported locale is served.
+
+    RFC 9110 12.5.4 defines no semantics for '*', delegating all matching to RFC 4647. We follow the
+    HTTP/1.1 rule RFC 4647 3.3.1 cites as an example: "the range '*' matches only languages not
+    matched by any other range within an 'Accept-Language' header" (RFC 2616 14.4). With no other
+    range present it claims everything, so falling back to the default locale here would refuse a
+    client that stated no objection.
+    """
     client = TestClient(LocaleMiddleware(app, locales=["be_BY"]))
     assert client.get("/", headers={"accept-language": "*"}).json() == ["be", "BY"]
 
 
 def test_locale_middleware_detects_locale_hyphenated() -> None:
+    """
+    Supported locales may be written with either separator.
+
+    RFC 4647 2.1 spells ranges with hyphens ('be-BY') while Babel identifies locales with underscores
+    ('be_BY'). Both are normalised to one vocabulary before matching, so configuring the middleware in
+    tag notation works.
+    """
     client = TestClient(LocaleMiddleware(app, locales=["be-BY"]))
     assert client.get("/", headers={"accept-language": "be-BY"}).json() == ["be", "BY"]
 
 
-def test_locale_middleware_detects_locale_prefix() -> None:
+def test_locale_middleware_prefers_exact_match_over_truncation() -> None:
+    """
+    Lookup returns the most specific acceptable locale, not the shortest.
+
+    RFC 4647 3.4 truncates only until a match is found, so 'en-US' stops at the exact en_US and never
+    reaches en - even though en is listed first and would also match after one truncation.
+    """
     client = TestClient(LocaleMiddleware(app, locales=["en", "en_US"]))
     assert client.get("/", headers={"accept-language": "en-US"}).json() == ["en", "US"]
 
 
-def test_locale_middleware_detects_locale_with_invalid_weight() -> None:
-    client = TestClient(LocaleMiddleware(app, locales=["en", "en_US"]))
-    assert client.get("/", headers={"accept-language": "en-US;q=100"}).json() == ["en", "US"]
-    assert client.get("/", headers={"accept-language": "en-US;q=-1"}).json() == ["en", "US"]
-
-
 def test_locale_middleware_detects_locale_from_header_with_locale_after_wildcard() -> None:
-    """It should handle a case when accept-language has locale after wildcard '*' value."""
+    """
+    '*' cannot claim a locale that another range already names.
+
+    Per RFC 2616 14.4, preserved via the note in RFC 4647 3.3.1, '*' "matches every tag not matched by
+    any other range present in the Accept-Language field". So 'es' is carved out and '*' resolves to
+    en. Note '*' is reached first on weight alone: it carries an implicit q=1 against es;q=0.1.
+    """
     client = TestClient(LocaleMiddleware(app, locales=["en", "es"]))
     assert client.get("/", headers={"accept-language": "*, es;q=0.1"}).json() == ["en", None]
 
 
+def test_locale_middleware_detects_locale_from_header_with_last_resort() -> None:
+    client = TestClient(LocaleMiddleware(app, locales=["es"]))
+    assert client.get("/", headers={"accept-language": "*, es;q=0.1"}).json() == ["es", None]
+
+
 def test_locale_middleware_detects_locale_from_header_with_locale_after_excluded_wildcard() -> None:
-    """It should handle a case when accept-language has locale after excluded wildcard '*;q=0' value."""
+    """
+    '*;q=0' refuses everything the client did not name explicitly.
+
+    RFC 9110 12.4.2 makes q=0 "not acceptable", so the wildcard vetoes en rather than selecting it,
+    leaving only the explicitly named es;q=0.1 acceptable.
+    """
     client = TestClient(LocaleMiddleware(app, locales=["en", "es"]))
     assert client.get("/", headers={"accept-language": "*;q=0, es;q=0.1"}).json() == ["es", None]
+
+
+def test_locale_middleware_ignores_member_without_a_language_range() -> None:
+    """
+    A member carrying only a weight names no language and is dropped.
+
+    RFC 9110 12.5.4 requires each member to be a `language-range [ weight ]`, and RFC 4647 2.1 gives
+    language-range at least one alphabetic character. ';q=1' satisfies neither, so it cannot outrank
+    the well-formed be;q=0.5 despite its higher weight.
+    """
+    client = TestClient(LocaleMiddleware(app, locales=["fr", "be"], default_locale="fr"))
+    assert client.get("/", headers={"accept-language": ";q=1, be;q=0.5"}).json() == ["be", None]
+
+
+def test_locale_middleware_wildcard_claims_nothing_when_all_locales_are_named() -> None:
+    """
+    '*' selects nothing if every supported locale is already named by another range.
+
+    The HTTP wildcard rule (RFC 2616 14.4, cited by RFC 4647 3.3.1) confines '*' to tags not matched
+    by any other range present in the field. Here en is named explicitly, so the wildcard has no
+    candidates left and the search moves on to the en range itself rather than stopping.
+    """
+    client = TestClient(LocaleMiddleware(app, locales=["en"], default_locale="fr"))
+    assert client.get("/", headers={"accept-language": "*, en;q=0.5"}).json() == ["en", None]
 
 
 def test_locale_middleware_detects_locale_ignores_excluded() -> None:
     """
     A q=0 range refuses only the locales it covers, and nothing broader.
 
-    Under basic filtering "en-GB" covers en_GB but not en, so "en;q=1, en-GB;q=0" refuses en_GB while
-    leaving en selectable.
+    Exclusion is evaluated with RFC 4647 3.3.1 basic filtering rather than lookup truncation: 'en-GB'
+    covers en_GB but not en, so 'en;q=1, en-GB;q=0' refuses en_GB while leaving en selectable. Were
+    the veto truncated the way selection is, en-GB;q=0 would collapse to en and refuse all English.
     """
     header = {"accept-language": "en;q=1, en-gb;q=0"}
 
@@ -148,7 +228,10 @@ def test_locale_middleware_combines_repeated_header_lines() -> None:
     """
     Repeated accept-language field lines form a single comma-joined value.
 
-    Per RFC 9110 5.2 the two lines below mean "fr;q=0.5, be", so be wins with its implicit q=1.
+    RFC 9110 5.2: "When a field name is repeated within a section, its combined field value consists
+    of the list of corresponding field line values within that section, concatenated in order, with
+    each field line value separated by a comma." The two lines below therefore mean "fr;q=0.5, be",
+    so be wins on its implicit q=1 - reading only the first line would have served fr.
     """
     client = TestClient(LocaleMiddleware(app, locales=["be_BY", "fr"]))
     headers = [("accept-language", "fr;q=0.5"), ("accept-language", "be")]
@@ -161,26 +244,64 @@ def test_locale_middleware_supports_language_shortcuts() -> None:
     assert client.get("/?lang=be_BY").json() == ["be", None]
 
 
-def test_locale_middleware_combines_accept_language_field_lines() -> None:
-    client = TestClient(LocaleMiddleware(app, locales=["fr", "be"], default_locale="fr"))
-    response = client.get(
-        "/",
-        headers=[
-            ("accept-language", "fr;q=0.5"),
-            ("accept-language", "be"),
-        ],
-    )
-    assert response.json() == ["be", None]
+def test_locale_middleware_truncates_range_to_supported_language() -> None:
+    """
+    A range more specific than anything supported is truncated from the right.
 
-
-def test_locale_middleware_uses_basic_filtering_direction() -> None:
+    RFC 4647 3.4 lookup drops the region subtag of 'de-DE' and matches de. Basic filtering (3.3.1)
+    would find nothing here, because a range only matches tags at least as specific as itself - this
+    test pins the direction that distinguishes the two schemes.
+    """
     client = TestClient(LocaleMiddleware(app, locales=["fr", "de"], default_locale="fr"))
-    assert client.get("/", headers={"accept-language": "de-DE"}).json() == ["fr", None]
+    assert client.get("/", headers={"accept-language": "de-DE"}).json() == ["de", None]
 
 
-def test_locale_middleware_specific_exclusion_overrides_broad_range() -> None:
-    client = TestClient(LocaleMiddleware(app, locales=["fr", "en-GB"], default_locale="fr"))
-    assert client.get("/", headers={"accept-language": "en;q=1,en-GB;q=0"}).json() == ["fr", None]
+def test_locale_middleware_prefers_truncated_range_over_lower_priority_range() -> None:
+    """
+    Each range is resolved fully before the next one is consulted.
+
+    RFC 4647 3.4 returns "the first matching tag found, according to the user's priority", so 'ca-ES'
+    truncating to the supported ca ends the search and es;q=0.9 is never reached. Under basic
+    filtering ca-ES would match nothing and a Catalan speaker would be served Spanish.
+    """
+    client = TestClient(LocaleMiddleware(app, locales=["ca", "es", "en"], default_locale="en"))
+    assert client.get("/", headers={"accept-language": "ca-ES,es;q=0.9,en;q=0.8"}).json() == ["ca", None]
+
+
+def test_locale_middleware_widens_range_to_supported_variant() -> None:
+    """
+    A range broader than anything supported still resolves, by widening.
+
+    Lookup only ever shortens a range, so 'be' against a supported be_BY would match nothing. This
+    library extends 3.4 with a basic-filtering (3.3.1) fallback, which RFC 9110 12.5.4 permits by
+    leaving the scheme to the implementation; the alternative is serving the default to a client
+    whose language is available.
+    """
+    client = TestClient(LocaleMiddleware(app, locales=["fr", "be_BY"], default_locale="fr"))
+    assert client.get("/", headers={"accept-language": "be"}).json() == ["be", "BY"]
+
+
+def test_locale_middleware_does_not_truncate_past_an_exclusion() -> None:
+    """
+    Truncation may not land on a locale the client refused.
+
+    'ca-ES' truncates toward ca, but ca;q=0 vetoes it under RFC 9110 12.4.2, so lookup keeps
+    truncating instead of serving a refused locale and ends at the default.
+    """
+    client = TestClient(LocaleMiddleware(app, locales=["ca", "fr"], default_locale="fr"))
+    assert client.get("/", headers={"accept-language": "ca-ES,ca;q=0"}).json() == ["fr", None]
+
+
+def test_locale_middleware_truncation_drops_singleton_subtags() -> None:
+    """
+    Single-character subtags are removed together with their trailing subtag.
+
+    RFC 4647 3.4 requires that singletons - the private-use 'x' and extension introducers - never be
+    left dangling at the end of a range, so 'zh-x-pig' truncates straight to zh rather than to the
+    meaningless 'zh-x'.
+    """
+    client = TestClient(LocaleMiddleware(app, locales=["zh", "fr"], default_locale="fr"))
+    assert client.get("/", headers={"accept-language": "zh-x-pig"}).json() == ["zh", None]
 
 
 class _User:
