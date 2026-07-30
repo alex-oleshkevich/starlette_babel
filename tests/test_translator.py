@@ -3,7 +3,18 @@ import pytest
 from babel.support import Translations
 
 from starlette_babel import switch_locale
-from starlette_babel.translator import LazyString, Translator, gettext, load_messages_from_directories, ngettext
+from starlette_babel.translator import (
+    LazyString,
+    Translator,
+    gettext,
+    load_messages_from_directories,
+    ngettext,
+    ngettext_lazy,
+    npgettext,
+    npgettext_lazy,
+    pgettext,
+    pgettext_lazy,
+)
 
 LOCALE_DIR = pathlib.Path(__file__).parent / "locales"
 EXTRA_LOCALE_DIR = pathlib.Path(__file__).parent / "extra_locales"
@@ -198,3 +209,93 @@ def test_translates_domain() -> None:
     with switch_locale("pl"):
         assert string == "Error"
         assert error_string == "Błąd"
+
+
+def test_translates_with_context() -> None:
+    """Same msgid under different contexts resolves to different translations."""
+    translator = Translator(directories=[LOCALE_DIR])
+    assert translator.pgettext("month", "May", locale="be") == "Травень"
+    assert translator.pgettext("verb", "May", locale="be") == "Можа"
+
+
+def test_translates_with_context_for_selected_domain() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
+    assert translator.pgettext("month", "May", locale="be", domain="errors") == "ERR: Травень"
+
+
+def test_context_miss_returns_msgid() -> None:
+    """An unknown context is a different message key, so the msgid comes back untranslated."""
+    translator = Translator(directories=[LOCALE_DIR])
+    assert translator.pgettext("unknown", "May", locale="be") == "May"
+
+
+def test_context_does_not_leak_into_plain_gettext() -> None:
+    """A contextualized message is not reachable without its context."""
+    translator = Translator(directories=[LOCALE_DIR])
+    assert translator.gettext("May", locale="be") == "May"
+
+
+def test_translates_plural_with_context() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
+    assert translator.npgettext("fruit", "{count} apple", "{count} apples", 1, locale="be") == "1 садавіна"
+    assert translator.npgettext("fruit", "{count} apple", "{count} apples", 2, locale="be") == "2 садавіны"
+    assert translator.npgettext("fruit", "{count} apple", "{count} apples", 5, locale="be") == "5 садавін"
+
+
+def test_plural_context_does_not_leak() -> None:
+    """The uncontextualized plural keeps its own translation."""
+    translator = Translator(directories=[LOCALE_DIR])
+    assert translator.ngettext("{count} apple", "{count} apples", 1, locale="be") == "1 яблык"
+
+
+def test_pgettext_uses_current_locale() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
+    with switch_locale("be"):
+        assert pgettext("month", "May", translator=translator) == "Травень"
+    with switch_locale("pl"):
+        assert pgettext("month", "May", translator=translator) == "Maj"
+
+
+def test_npgettext_uses_current_locale() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
+    with switch_locale("be"):
+        assert npgettext("fruit", "{count} apple", "{count} apples", 2, translator=translator) == "2 садавіны"
+
+
+def test_pgettext_lazy_translates_on_access() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
+    string = pgettext_lazy("month", "May", translator=translator)
+    with switch_locale("be"):
+        assert string == "Травень"
+    with switch_locale("pl"):
+        assert string == "Maj"
+
+
+def test_npgettext_lazy_translates_on_access() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
+    string = npgettext_lazy("fruit", "{count} apple", "{count} apples", 5, translator=translator)
+    with switch_locale("be"):
+        assert string == "5 садавін"
+
+
+def test_ngettext_lazy_translates_on_access() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
+    string = ngettext_lazy("{count} apple", "{count} apples", 2, translator=translator)
+    with switch_locale("be"):
+        assert string == "2 яблыкі"
+    with switch_locale("pl"):
+        assert string == "2 jabłka"
+
+
+def test_lazy_string_accepts_context() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
+    string = LazyString("May", translator=translator, context="verb")
+    with switch_locale("be"):
+        assert string == "Можа"
+
+
+def test_pgettext_lazy_for_domain() -> None:
+    translator = Translator(directories=[LOCALE_DIR])
+    string = pgettext_lazy("month", "May", domain="errors", translator=translator)
+    with switch_locale("be"):
+        assert string == "ERR: Травень"

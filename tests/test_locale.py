@@ -14,6 +14,7 @@ from starlette_babel.locale import (
     LocaleMiddleware,
     get_language,
     get_locale,
+    get_text_direction,
     negotiate_locale,
     parse_accept_language,
     set_locale,
@@ -457,3 +458,30 @@ async def test_locale_middleware_invalid_request_type() -> None:
     middleware = LocaleMiddleware(fake_app)
     await middleware({"type": "lifecycle"}, fake_receive, fake_send)
     assert "state" not in scope
+
+
+def test_get_text_direction_from_string() -> None:
+    assert get_text_direction("ar") == "rtl"
+    assert get_text_direction("he") == "rtl"
+    assert get_text_direction("en") == "ltr"
+
+
+def test_get_text_direction_from_locale_object() -> None:
+    assert get_text_direction(Locale.parse("ar_SA")) == "rtl"
+
+
+def test_get_text_direction_uses_current_locale() -> None:
+    with switch_locale("ar"):
+        assert get_text_direction() == "rtl"
+    with switch_locale("be_BY"):
+        assert get_text_direction() == "ltr"
+
+
+def test_locale_middleware_sets_text_direction_state() -> None:
+    async def direction_app(scope: Scope, receive: Receive, send: Send) -> None:
+        request = Request(scope, receive, send)
+        await JSONResponse(request.state.text_direction)(scope, receive, send)
+
+    client = TestClient(LocaleMiddleware(direction_app, locales=["en", "ar"], default_locale="en"))
+    assert client.get("/?lang=ar").json() == "rtl"
+    assert client.get("/?lang=en").json() == "ltr"

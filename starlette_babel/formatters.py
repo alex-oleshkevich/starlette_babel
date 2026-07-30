@@ -8,13 +8,16 @@ import datetime
 import decimal
 import typing
 
-from babel import Locale, dates, numbers
+from babel import Locale, dates, lists, numbers, units
 
 from starlette_babel.locale import get_locale
 from starlette_babel.timezone import get_timezone
 
 _DateTimeFormats = typing.Literal["short", "medium", "long", "full"]
 _TimeDeltaFormats = typing.Literal["narrow", "short", "long"]
+_NameWidths = typing.Literal["abbreviated", "narrow", "wide"]
+_NameContexts = typing.Literal["format", "stand-alone"]
+_ListStyles = typing.Literal["standard", "standard-short", "or", "or-short", "unit", "unit-short", "unit-narrow"]
 
 
 def parse_locale(locale: str | Locale | None) -> Locale:
@@ -105,19 +108,60 @@ def format_interval(
     )
 
 
-def format_number(
-    number: float,
+def format_skeleton(
+    skeleton: str,
+    dt: datetime.datetime | datetime.time,
+    fuzzy: bool = True,
+    rebase: bool = True,
+    locale: str | None = None,
+) -> str:
+    """Format a datetime using a CLDR date/time skeleton (eg. `yMMdd`, `EHm`).
+
+    A skeleton describes which fields to render, letting the locale decide their order and separators.
+    When `fuzzy` is set, the closest available skeleton is used if the requested one is not defined.
+
+    Example:
+        ```python
+        from starlette_babel import format_skeleton, set_locale
+
+        set_locale('en_US')
+        format_skeleton('yMMd', datetime.datetime(2022, 12, 25))  # '12/25/2022'
+        ```
+    """
+    tz = get_timezone() if rebase else None
+    return dates.format_skeleton(skeleton, dt, tzinfo=tz, fuzzy=fuzzy, locale=parse_locale(locale))
+
+
+def format_decimal(
+    number: float | int | decimal.Decimal | str,
+    format: str | None = None,
     decimal_quantization: bool = True,
     group_separator: bool = True,
     locale: str | None = None,
 ) -> str:
     value = numbers.format_decimal(
         number,
+        format=format,
         locale=parse_locale(locale),
         decimal_quantization=decimal_quantization,
         group_separator=group_separator,
     )
     return typing.cast(str, value)
+
+
+def format_number(
+    number: float,
+    decimal_quantization: bool = True,
+    group_separator: bool = True,
+    locale: str | None = None,
+) -> str:
+    """Format a decimal number. An alias of `format_decimal` kept for backwards compatibility."""
+    return format_decimal(
+        number,
+        decimal_quantization=decimal_quantization,
+        group_separator=group_separator,
+        locale=locale,
+    )
 
 
 def format_currency(
@@ -141,6 +185,51 @@ def format_currency(
         group_separator=group_separator,
     )
     return value
+
+
+def format_compact_currency(
+    number: float | int | decimal.Decimal | str,
+    currency: str,
+    *,
+    fraction_digits: int = 0,
+    format_type: typing.Literal["short"] = "short",
+    locale: str | None = None,
+) -> str:
+    """Format a currency amount in compact notation (eg. 1 200 000 USD → $1.2M).
+
+    Example:
+        ```python
+        from starlette_babel import format_compact_currency, set_locale
+
+        set_locale('en_US')
+        format_compact_currency(1_200_000, 'USD', fraction_digits=1)  # '$1.2M'
+        ```
+    """
+    value = numbers.format_compact_currency(  # type: ignore[attr-defined]
+        number,
+        currency,
+        format_type=format_type,
+        fraction_digits=fraction_digits,
+        locale=parse_locale(locale),
+    )
+    return typing.cast(str, value)
+
+
+def get_currency_symbol(currency: str, locale: str | None = None) -> str:
+    """Get the symbol used by the locale for the currency (eg. 'USD' → '$')."""
+    return numbers.get_currency_symbol(currency, locale=parse_locale(locale))
+
+
+def get_currency_name(
+    currency: str,
+    count: float | decimal.Decimal | None = None,
+    locale: str | None = None,
+) -> str:
+    """Get the name used by the locale for the currency.
+
+    When `count` is given, the name is returned in the plural form matching that count.
+    """
+    return numbers.get_currency_name(currency, count=count, locale=parse_locale(locale))
 
 
 def format_percent(
@@ -235,3 +324,109 @@ def parse_number(
         ```
     """
     return numbers.parse_number(string, locale=parse_locale(locale))
+
+
+def parse_date(
+    string: str,
+    format: _DateTimeFormats | str = "medium",
+    locale: str | None = None,
+) -> datetime.date:
+    """Parse a locale-formatted date string into a date.
+
+    Example:
+        ```python
+        from starlette_babel import parse_date, set_locale
+
+        set_locale('en_US')
+        parse_date('4/1/04')  # date(2004, 4, 1)
+        ```
+
+    Note: Babel does not provide a `parse_datetime` counterpart.
+    """
+    return dates.parse_date(string, locale=parse_locale(locale), format=format)  # type: ignore[arg-type]
+
+
+def parse_time(
+    string: str,
+    format: _DateTimeFormats | str = "medium",
+    locale: str | None = None,
+) -> datetime.time:
+    """Parse a locale-formatted time string into a time.
+
+    Example:
+        ```python
+        from starlette_babel import parse_time, set_locale
+
+        set_locale('en_US')
+        parse_time('15:30:00')  # time(15, 30)
+        ```
+
+    Note: the result carries no timezone. It is not rebased to the current user timezone.
+    """
+    return dates.parse_time(string, locale=parse_locale(locale), format=format)  # type: ignore[arg-type]
+
+
+def format_unit(
+    value: float | decimal.Decimal | str,
+    measurement_unit: str,
+    length: typing.Literal["short", "long", "narrow"] = "long",
+    format: str | None = None,
+    locale: str | None = None,
+) -> str:
+    """Format a value as a measurement unit (eg. `length-kilometer` → '5 kilometres').
+
+    Consult the CLDR unit list for supported `measurement_unit` values.
+
+    Example:
+        ```python
+        from starlette_babel import format_unit, set_locale
+
+        set_locale('en_GB')
+        format_unit(5, 'length-kilometer')                  # '5 kilometres'
+        format_unit(5, 'length-kilometer', length='short')  # '5 km'
+        ```
+    """
+    return units.format_unit(
+        value,  # type: ignore[arg-type]
+        measurement_unit,
+        length=length,
+        format=format,
+        locale=parse_locale(locale),
+    )
+
+
+def format_list(
+    values: typing.Sequence[str],
+    style: _ListStyles = "standard",
+    locale: str | None = None,
+) -> str:
+    """Join a sequence of strings the way the locale does (eg. 'apples, bananas, and cherries').
+
+    Example:
+        ```python
+        from starlette_babel import format_list, set_locale
+
+        set_locale('en_US')
+        format_list(['a', 'b', 'c'])              # 'a, b, and c'
+        format_list(['a', 'b', 'c'], style='or')  # 'a, b, or c'
+        ```
+    """
+    return lists.format_list(values, style=style, locale=parse_locale(locale))
+
+
+def get_month_names(
+    width: _NameWidths = "wide",
+    context: _NameContexts = "format",
+    locale: str | None = None,
+) -> dict[int, str]:
+    """Get a mapping of month number to localized month name. Useful for date pickers."""
+    return dict(dates.get_month_names(width=width, context=context, locale=parse_locale(locale)))
+
+
+def get_day_names(
+    width: typing.Literal["abbreviated", "narrow", "short", "wide"] = "wide",
+    context: _NameContexts = "format",
+    locale: str | None = None,
+) -> dict[int, str]:
+    """Get a mapping of weekday number (0 = Monday) to localized day name. Useful for date pickers."""
+    return dict(dates.get_day_names(width=width, context=context, locale=parse_locale(locale)))

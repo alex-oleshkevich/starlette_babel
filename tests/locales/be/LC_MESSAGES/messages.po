@@ -31,3 +31,18 @@ msgid_plural "{count} apples"
 msgstr[0] "{count} яблык"
 msgstr[1] "{count} яблыкі"
 msgstr[2] "{count} яблыкаў"
+
+msgctxt "month"
+msgid "May"
+msgstr "Травень"
+
+msgctxt "verb"
+msgid "May"
+msgstr "Можа"
+
+msgctxt "fruit"
+msgid "{count} apple"
+msgid_plural "{count} apples"
+msgstr[0] "{count} садавіна"
+msgstr[1] "{count} садавіны"
+msgstr[2] "{count} садавін"

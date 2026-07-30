@@ -31,3 +31,11 @@ msgid_plural "{count} apples"
 msgstr[0] "{count} jabłko"
 msgstr[1] "{count} jabłka"
 msgstr[2] "{count} jablek"
+
+msgctxt "month"
+msgid "May"
+msgstr "Maj"
+
+msgctxt "verb"
+msgid "May"
+msgstr "Może"

@@ -48,26 +48,40 @@ class LazyString(LazyProxy):
         count: int | None = None,
         domain: str = "messages",
         translator: Translator | None = None,
+        *,
+        context: str | None = None,
     ) -> None:
         object.__setattr__(self, "msgid", msgid)
         object.__setattr__(self, "domain", domain)
         object.__setattr__(self, "msgid_plural", msgid_plural)
         object.__setattr__(self, "count", count)
+        object.__setattr__(self, "context", context)
         object.__setattr__(self, "translator", translator or get_translator())
         super().__init__(self.translate, enable_cache=False)
 
     def translate(self) -> str:
-        locale = get_locale()
-        if self.msgid_plural:
+        locale = str(get_locale())
+        if self.context and self.msgid_plural:
+            value = self.translator.npgettext(
+                context=self.context,
+                singular=self.msgid,
+                plural=self.msgid_plural,
+                count=self.count,
+                locale=locale,
+                domain=self.domain,
+            )
+        elif self.context:
+            value = self.translator.pgettext(context=self.context, msgid=self.msgid, locale=locale, domain=self.domain)
+        elif self.msgid_plural:
             value = self.translator.ngettext(
                 singular=self.msgid,
                 plural=self.msgid_plural,
                 count=self.count,
-                locale=str(locale),
+                locale=locale,
                 domain=self.domain,
             )
         else:
-            value = self.translator.gettext(msgid=self.msgid, locale=str(locale), domain=self.domain)
+            value = self.translator.gettext(msgid=self.msgid, locale=locale, domain=self.domain)
         return typing.cast(str, value)
 
 
@@ -79,10 +93,45 @@ class _GettextLazy(typing.Protocol):  # pragma: nocover
         count: int | None = None,
         domain: str = "messages",
         translator: Translator | None = None,
+        *,
+        context: str | None = None,
     ) -> str: ...
 
 
 gettext_lazy = typing.cast(_GettextLazy, LazyString)
+
+
+def ngettext_lazy(
+    singular: str,
+    plural: str,
+    count: int,
+    domain: str = "messages",
+    translator: Translator | None = None,
+) -> str:
+    """Mark a plural message as translatable. The message is translated on access."""
+    return typing.cast(str, LazyString(singular, plural, count, domain=domain, translator=translator))
+
+
+def pgettext_lazy(
+    context: str,
+    msgid: str,
+    domain: str = "messages",
+    translator: Translator | None = None,
+) -> str:
+    """Mark a context-aware message as translatable. The message is translated on access."""
+    return typing.cast(str, LazyString(msgid, domain=domain, translator=translator, context=context))
+
+
+def npgettext_lazy(
+    context: str,
+    singular: str,
+    plural: str,
+    count: int,
+    domain: str = "messages",
+    translator: Translator | None = None,
+) -> str:
+    """Mark a context-aware plural message as translatable. The message is translated on access."""
+    return typing.cast(str, LazyString(singular, plural, count, domain=domain, translator=translator, context=context))
 
 
 def gettext(
@@ -114,6 +163,51 @@ def ngettext(
     locale = str(locale if locale else get_locale())
     translator = translator or get_translator()
     return translator.ngettext(singular=singular, plural=plural, count=count, locale=str(locale), domain=domain)
+
+
+def pgettext(
+    context: str,
+    msgid: str,
+    locale: str | None = None,
+    domain: str = "messages",
+    translator: Translator | None = None,
+) -> str:
+    """Translate message using a message context.
+
+    The context disambiguates messages that share the same msgid but differ in meaning,
+    like "May" the month and "may" the verb.
+    """
+    locale = str(locale if locale else get_locale())
+    translator = translator or get_translator()
+    return translator.pgettext(context=context, msgid=msgid, locale=str(locale), domain=domain)
+
+
+def npgettext(
+    context: str,
+    singular: str,
+    plural: str,
+    count: int,
+    locale: str | None = None,
+    domain: str = "messages",
+    translator: Translator | None = None,
+) -> str:
+    """Translate message (plural form) using a message context.
+
+    Plural translation strings may use `{count}` as a placeholder for the count value.
+    """
+    locale = str(locale if locale else get_locale())
+    translator = translator or get_translator()
+    return translator.npgettext(
+        context=context, singular=singular, plural=plural, count=count, locale=str(locale), domain=domain
+    )
+
+
+def _apply_count(value: str, count: int) -> str:
+    """Interpolate `{count}` placeholder into a translated plural form."""
+    try:
+        return value.format(count=count)
+    except (KeyError, IndexError):  # pragma: no cover
+        return value
 
 
 class Translator:
@@ -220,11 +314,27 @@ class Translator:
         Translation strings may use `{count}` as a placeholder for the count value.
         """
         translations = self.get_translations(locale=locale, domain=domain)
-        result = translations.ngettext(singular, plural, count)
-        try:
-            return result.format(count=count)
-        except (KeyError, IndexError):  # pragma: no cover
-            return result
+        return _apply_count(translations.ngettext(singular, plural, count), count)
+
+    def pgettext(self, context: str, msgid: str, locale: str, domain: str = "messages") -> str:
+        """Translate msgid within a message context.
+
+        The context is a part of the message key: the same msgid with a different context
+        is a different message. When the contextualized message is missing, msgid returned as is.
+        """
+        translations = self.get_translations(locale=locale, domain=domain)
+        return typing.cast(str, translations.pgettext(context, msgid))  # type: ignore[no-untyped-call]
+
+    def npgettext(
+        self, context: str, singular: str, plural: str, count: int, locale: str, domain: str = "messages"
+    ) -> str:
+        """Translate msgid (plural form) within a message context.
+
+        Translation strings may use `{count}` as a placeholder for the count value.
+        """
+        translations = self.get_translations(locale=locale, domain=domain)
+        result = translations.npgettext(context, singular, plural, count)  # type: ignore[no-untyped-call]
+        return _apply_count(typing.cast(str, result), count)
 
 
 Translator.shared_translator = Translator()

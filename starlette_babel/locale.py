@@ -54,6 +54,23 @@ def get_language() -> str:
     return get_locale().language
 
 
+def get_text_direction(locale: Locale | str | None = None) -> typing.Literal["ltr", "rtl"]:
+    """
+    Get the writing direction of the locale. Uses the current locale when none given.
+
+    Use it to set the `dir` attribute of the HTML document:
+
+    ```html
+    <html dir="{{ text_direction() }}">
+    ```
+    """
+    if locale is None:
+        locale = get_locale()
+    elif isinstance(locale, str):
+        locale = Locale.parse(locale)
+    return typing.cast(typing.Literal["ltr", "rtl"], locale.text_direction)
+
+
 LocaleSelector = typing.Callable[[HTTPConnection], str | None]
 
 
@@ -254,7 +271,9 @@ class LocaleMiddleware:
         locale = self.detect_locale(HTTPConnection(scope))
         set_locale(locale)
         scope.setdefault("state", {})
-        scope["state"].update({"locale": locale, "language": locale.language})
+        scope["state"].update(
+            {"locale": locale, "language": locale.language, "text_direction": get_text_direction(locale)}
+        )
         await self.app(scope, receive, send_wrapper)
 
     def detect_locale(self, conn: HTTPConnection) -> Locale:

@@ -37,3 +37,7 @@ msgid_plural "{count} apples"
 msgstr[0] "ERR: {count} яблык"
 msgstr[1] "ERR: {count} яблыкі"
 msgstr[2] "ERR: {count} яблыкаў"
+
+msgctxt "month"
+msgid "May"
+msgstr "ERR: Травень"

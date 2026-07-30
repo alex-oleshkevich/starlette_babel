@@ -23,12 +23,14 @@ uv add starlette_babel
 
 - Locale middleware
 - Multi-domain translations
+- Contextual translations via `pgettext` / `npgettext`
 - Locale selectors
 - Timezone middleware
 - Timezone selectors
-- Locale-aware formatters (dates, times, numbers, currencies, percentages)
+- Locale-aware formatters (dates, times, numbers, currencies, percentages, units, lists)
 - Locale negotiation via `negotiate_locale`
-- Number parsing via `parse_number` / `parse_decimal`
+- Number and date parsing via `parse_number` / `parse_decimal` / `parse_date` / `parse_time`
+- Text direction (LTR/RTL) detection via `get_text_direction`
 - Jinja2 integration
 
 ## Quick start
@@ -63,7 +65,7 @@ app = Starlette(
 
 #### From request object
 
-The `LocaleMiddleware` adds two state options to the request: `locale` and `language`.
+The `LocaleMiddleware` adds three state options to the request: `locale`, `language`, and `text_direction`.
 
 ```python
 from babel import Locale
@@ -72,6 +74,7 @@ from babel import Locale
 def index_view(request):
     current_locale: Locale = request.state.locale
     current_language: str = request.state.language
+    current_direction: str = request.state.text_direction  # 'ltr' or 'rtl'
 ```
 
 #### Using `get_locale` helper
@@ -225,9 +228,25 @@ The `configure_jinja_env` makes the following utilities available in the templat
 
 - `_` - alias for `gettext`
 - `_p` - alias for `ngettext`
+- `_c` - alias for `pgettext` (contextual)
+- `_cp` - alias for `npgettext` (contextual plural)
+- `locale` - current `Locale` object
+- `language` - current language code
+- `text_direction` - `ltr` or `rtl` for the current locale
+- `month_names`, `day_names` - localized calendar names
+- `currency_symbol`, `currency_name` - localized currency labels
 
 ```html
-<time>{{ _('Welcome') }}</time>
+<html dir="{{ text_direction() }}" lang="{{ language() }}">
+    <time>{{ _('Welcome') }}</time>
+    <span>{{ _c('month', 'May') }}</span>
+</html>
+```
+
+The `{% trans %}` tag accepts a context as its first argument:
+
+```html
+{% trans "verb" %}May{% endtrans %}
 ```
 
 #### Filters
@@ -236,12 +255,22 @@ The `configure_jinja_env` makes the following utilities available in the templat
 - date
 - time
 - timedelta
+- interval
+- skeleton
 - number
+- decimal
+- compact_decimal
 - currency
+- compact_currency
 - percent
 - scientific
+- unit
+- format_list
 
 All these filters are locale-aware and will format passed data using locale defined format.
+
+> The list formatter is exposed as `format_list` rather than `list`, because Jinja already ships a builtin
+> `list` filter that we must not shadow.
 
 ```html
 <time>your local time is {{ now|datetime }}</time>
@@ -327,18 +356,59 @@ Our version automatically applies current locale/timezone without defining them 
 
 Here is the list of adapted formatters:
 
+Dates and times:
+
 - format_datetime
 - format_date
 - format_time
 - format_timedelta
 - format_interval
-- format_number
+- format_skeleton
+- parse_date
+- parse_time
+- get_month_names
+- get_day_names
+
+Numbers, currencies, and units:
+
+- format_number (alias of `format_decimal`)
+- format_decimal
+- format_compact_decimal
 - format_currency
+- format_compact_currency
 - format_percent
 - format_scientific
-- format_compact_decimal
+- format_unit
+- parse_decimal
+- parse_number
+- get_currency_symbol
+- get_currency_name
+
+Lists:
+
+- format_list
 
 Consult [Babel documentation](https://babel.pocoo.org/en/latest/index.html) for more information.
+
+> Babel provides no `parse_datetime` counterpart to `parse_date` / `parse_time`, so neither do we.
+
+### Text direction
+
+Use `get_text_direction` to render right-to-left languages correctly. Without an argument it uses the current locale.
+
+```python
+from starlette_babel import get_text_direction
+
+get_text_direction()      # 'ltr' or 'rtl' for the current locale
+get_text_direction('ar')  # 'rtl'
+```
+
+`LocaleMiddleware` also exposes it on the request state:
+
+```python
+def index_view(request):
+    direction: str = request.state.text_direction
+```
 
 ### Usage
 

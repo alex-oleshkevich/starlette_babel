@@ -6,19 +6,30 @@ from babel import Locale
 
 from starlette_babel import switch_locale, switch_timezone
 from starlette_babel.formatters import (
+    format_compact_currency,
     format_compact_decimal,
     format_currency,
     format_date,
     format_datetime,
+    format_decimal,
     format_interval,
+    format_list,
     format_number,
     format_percent,
     format_scientific,
+    format_skeleton,
     format_time,
     format_timedelta,
+    format_unit,
+    get_currency_name,
+    get_currency_symbol,
+    get_day_names,
+    get_month_names,
+    parse_date,
     parse_decimal,
     parse_locale,
     parse_number,
+    parse_time,
 )
 
 christmas = datetime.datetime(2022, 12, 25, 12, 30, 59)
@@ -230,3 +241,90 @@ def test_format_interval_raises_for_type_mismatch(
 ) -> None:
     with pytest.raises(TypeError, match="same type"):
         format_interval(datetime.time(8, 15), datetime.date(2022, 1, 1))
+
+
+def test_format_skeleton(bel_locale: typing.Generator[None, None, None]) -> None:
+    assert format_skeleton("yMMMd", christmas, rebase=False) == "25 сне 2022"
+    with switch_locale("en_US"):
+        assert format_skeleton("yMMMd", christmas, rebase=False) == "Dec 25, 2022"
+
+
+def test_format_skeleton_rebases_to_user_timezone(bel_locale: typing.Generator[None, None, None]) -> None:
+    with switch_timezone("Europe/Minsk"):
+        assert format_skeleton("Hm", christmas, rebase=True) == "15:30"
+    with switch_timezone("UTC"):
+        assert format_skeleton("Hm", christmas, rebase=True) == "12:30"
+
+
+def test_format_decimal(bel_locale: typing.Generator[None, None, None]) -> None:
+    assert format_decimal(12345.678) == "12 345,678"
+    assert format_decimal(12345.678, group_separator=False) == "12345,678"
+
+
+def test_format_number_matches_format_decimal(bel_locale: typing.Generator[None, None, None]) -> None:
+    """`format_number` is kept as an alias and must not drift from `format_decimal`."""
+    assert format_number(12345.678) == format_decimal(12345.678)
+
+
+def test_format_compact_currency(bel_locale: typing.Generator[None, None, None]) -> None:
+    with switch_locale("en_US"):
+        assert format_compact_currency(1_200_000, "USD", fraction_digits=1) == "$1.2M"
+        assert format_compact_currency(1_200_000, "USD") == "$1M"
+
+
+def test_get_currency_symbol(bel_locale: typing.Generator[None, None, None]) -> None:
+    assert get_currency_symbol("USD") == "$"
+    with switch_locale("en_US"):
+        assert get_currency_symbol("USD") == "$"
+
+
+def test_get_currency_name(bel_locale: typing.Generator[None, None, None]) -> None:
+    assert get_currency_name("USD", 2) == "долары ЗША"
+    with switch_locale("en_US"):
+        assert get_currency_name("USD", 2) == "US dollars"
+
+
+def test_format_unit(bel_locale: typing.Generator[None, None, None]) -> None:
+    assert format_unit(5, "length-kilometer") == "5 кіламетраў"
+    assert format_unit(5, "length-kilometer", length="short") == "5 км"
+    with switch_locale("en_US"):
+        assert format_unit(5, "length-kilometer") == "5 kilometers"
+
+
+def test_format_list(bel_locale: typing.Generator[None, None, None]) -> None:
+    assert format_list(["a", "b", "c"]) == "a, b і c"
+    assert format_list(["a", "b", "c"], style="or") == "a, b ці c"
+    with switch_locale("en_US"):
+        assert format_list(["a", "b", "c"]) == "a, b, and c"
+        assert format_list(["a", "b", "c"], style="or") == "a, b, or c"
+
+
+def test_get_month_names(bel_locale: typing.Generator[None, None, None]) -> None:
+    assert get_month_names()[12] == "снежня"
+    with switch_locale("en_US"):
+        assert get_month_names()[12] == "December"
+        assert get_month_names("abbreviated")[12] == "Dec"
+
+
+def test_get_day_names(bel_locale: typing.Generator[None, None, None]) -> None:
+    assert get_day_names()[0] == "панядзелак"
+    with switch_locale("en_US"):
+        assert get_day_names()[0] == "Monday"
+
+
+def test_parse_date(bel_locale: typing.Generator[None, None, None]) -> None:
+    assert parse_date("25.12.2022") == datetime.date(2022, 12, 25)
+    with switch_locale("en_US"):
+        assert parse_date("12/25/22") == datetime.date(2022, 12, 25)
+
+
+def test_parse_time(bel_locale: typing.Generator[None, None, None]) -> None:
+    assert parse_time("15:30:00") == datetime.time(15, 30)
+
+
+def test_formatters_use_explicit_locale_over_current(bel_locale: typing.Generator[None, None, None]) -> None:
+    """Every formatter honours an explicit `locale` argument regardless of the active locale."""
+    assert format_list(["a", "b"], locale="en_US") == "a and b"
+    assert format_unit(5, "length-kilometer", locale="en_US") == "5 kilometers"
+    assert format_decimal(1234.5, locale="en_US") == "1,234.5"
+    assert get_month_names(locale="en_US")[12] == "December"

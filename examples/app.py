@@ -33,9 +33,9 @@ def index_view(request: Request) -> Response:
     currency = currency_map.get(request.state.locale.language, "UNK")
 
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "message": message,
             "current_time": current_time,
             "since_midnight": since_midnight,
