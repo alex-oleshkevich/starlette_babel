@@ -6,6 +6,7 @@ from starlette.testclient import TestClient
 from starlette.types import Message, Receive, Scope, Send
 
 from starlette_babel.locale import (
+    MAX_HEADER_LENGTH,
     LocaleFromCookie,
     LocaleFromHeader,
     LocaleFromQuery,
@@ -181,6 +182,30 @@ class TestParseAcceptLanguage:
     def test_skips_empty_members_between_ranges(self) -> None:
         """An empty list member is skipped without disturbing the ranges around it."""
         assert parse_accept_language("en, , fr") == (("en", 1.0), ("fr", 1.0))
+
+    def test_parses_a_header_at_the_length_limit_in_full(self) -> None:
+        """Nothing is discarded while the field value stays within `MAX_HEADER_LENGTH`."""
+        members = ["en"] + [f"l{i:03}" for i in range(99)]
+        header = ",".join(members).ljust(MAX_HEADER_LENGTH, "x")
+        assert len(header) == MAX_HEADER_LENGTH
+        assert len(parse_accept_language(header)) == len(members)
+
+    def test_discards_an_oversized_header_at_a_member_boundary(self) -> None:
+        """An over-long field value is cut back to its last complete member.
+
+        The straddling member is dropped whole rather than parsed from a fragment, so a truncated
+        range is never mistaken for a preference the client expressed."""
+        header = ",".join(["en"] + [f"l{i:03}" for i in range(200)])
+        assert len(header) > MAX_HEADER_LENGTH
+
+        parsed = parse_accept_language(header)
+        assert len(parsed) < 201
+        assert all(len(lang_range) in (2, 4) for lang_range, _ in parsed)
+        assert header.startswith(",".join(lang_range for lang_range, _ in parsed))
+
+    def test_discards_an_oversized_header_naming_a_single_member(self) -> None:
+        """With no member boundary below the limit there is nothing safe to keep."""
+        assert parse_accept_language("e" * (MAX_HEADER_LENGTH + 1)) == ()
 
     def test_keeps_the_wildcard_as_an_ordinary_range(self) -> None:
         """'*' is parsed as a range like any other, weight included."""

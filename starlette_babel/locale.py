@@ -88,6 +88,8 @@ class LocaleFromCookie:
 # RFC 9110 12.4.2: qvalue = ( "0" [ "." 0*3DIGIT ] ) / ( "1" [ "." 0*3("0") ] ).
 _QVALUE_RE = re.compile(r"q=(0(?:\.[0-9]{0,3})?|1(?:\.0{0,3})?)")
 
+MAX_HEADER_LENGTH = 500
+
 
 def parse_accept_language(header: str) -> tuple[tuple[str, float], ...]:
     """
@@ -97,6 +99,10 @@ def parse_accept_language(header: str) -> tuple[tuple[str, float], ...]:
     does not match the qvalue grammar is dropped rather than guessed at, since a malformed member
     carries no reliable preference.
     """
+    if len(header) > MAX_HEADER_LENGTH:
+        boundary = header.rfind(",", 0, MAX_HEADER_LENGTH)
+        header = header[:boundary] if boundary > 0 else ""
+
     result: list[tuple[str, float]] = []
     for spec in header.split(","):
         spec = spec.strip()
