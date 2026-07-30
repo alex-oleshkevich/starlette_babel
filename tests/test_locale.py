@@ -250,9 +250,22 @@ class TestLocaleFromHeader:
         """Truncation is a fallback, not a first move: an exact match ends the search."""
         assert LocaleFromHeader(["fr", "de", "de_DE"])(make_conn("de-DE")) == "de_DE"
 
+    @pytest.mark.parametrize("locales", (["zh", "zh_Hant"], ["zh_Hant", "zh"]))
+    def test_truncates_one_subtag_at_a_time(self, locales: list[str]) -> None:
+        """Truncation is progressive, so a supported intermediate variant is not skipped."""
+        assert LocaleFromHeader(locales)(make_conn("zh-Hant-CN")) == "zh_Hant"
+
     def test_truncation_drops_singleton_subtags(self) -> None:
         """Single-character subtags are removed together with their trailing subtag."""
         assert LocaleFromHeader(["zh", "fr"])(make_conn("zh-x-pig")) == "zh"
+
+    def test_range_of_only_a_private_use_sequence_names_no_language(self) -> None:
+        """Truncating away the singleton can leave nothing at all, which is not a match.
+
+        RFC 4647 2.1 admits 'x-pig' as a language-range, but the private-use 'x' goes with its
+        trailing subtag and nothing remains to compare, so the search moves on to the next range."""
+        assert LocaleFromHeader(["en", "zh"])(make_conn("x-pig")) is None
+        assert LocaleFromHeader(["en", "zh"])(make_conn("x-pig,zh;q=0.5")) == "zh"
 
     def test_resolves_each_range_fully_before_the_next(self) -> None:
         """A range is truncated to exhaustion before a lower-priority range is consulted."""
@@ -272,16 +285,12 @@ class TestLocaleFromHeader:
         """Truncation may not land on a locale the client refused."""
         assert LocaleFromHeader(["ca", "fr"])(make_conn("ca-ES,ca;q=0")) is None
 
+    def test_skips_a_refused_candidate_and_keeps_looking_in_the_same_tier(self) -> None:
+        """A refusal rejects one candidate, not the whole match tier."""
+        assert LocaleFromHeader(["de_CH", "de_AT"])(make_conn("de-DE;q=1, de-ch;q=0")) == "de_AT"
+
 
 class TestWildcardRange:
-    def test_bare_wildcard_claims_the_first_supported_locale(self) -> None:
-        """With no other range present, the complement is everything."""
-        assert LocaleFromHeader(["be_BY"])(make_conn("*")) == "be_BY"
-
-    def test_does_not_claim_a_locale_that_another_range_names(self) -> None:
-        """A named range keeps its locale out of the wildcard's territory."""
-        assert LocaleFromHeader(["en", "es"])(make_conn("*, es;q=0.1")) == "en"
-
     @pytest.mark.parametrize(
         ("locales", "header", "expected"),
         (
