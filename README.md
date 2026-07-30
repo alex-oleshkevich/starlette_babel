@@ -3,7 +3,7 @@
 Provides translations, formatters, and timezone support for Starlette application by integrating Babel library.
 
 ![PyPI](https://img.shields.io/pypi/v/starlette_babel)
-![GitHub Workflow Status](https://img.shields.io/github/workflow/status/alex-oleshkevich/starlette_babel/Lint)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/alex-oleshkevich/starlette_babel/lint_and_test.yml?branch=master)
 ![GitHub](https://img.shields.io/github/license/alex-oleshkevich/starlette_babel)
 ![Libraries.io dependency status for latest release](https://img.shields.io/librariesio/release/pypi/starlette_babel)
 ![PyPI - Downloads](https://img.shields.io/pypi/dm/starlette_babel)
